@@ -2,7 +2,6 @@ package schema1
 
 import (
 	"bytes"
-	"compress/gzip"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -14,17 +13,18 @@ import (
 	"sync"
 	"time"
 
+	"github.com/pkg/errors"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/containerd/containerd/archive/compression"
 	"github.com/containerd/containerd/content"
 	"github.com/containerd/containerd/errdefs"
 	"github.com/containerd/containerd/images"
 	"github.com/containerd/containerd/log"
 	"github.com/containerd/containerd/remotes"
-	digest "github.com/opencontainers/go-digest"
-	specs "github.com/opencontainers/image-spec/specs-go"
+	"github.com/opencontainers/go-digest"
+	"github.com/opencontainers/image-spec/specs-go"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
-	"github.com/pkg/errors"
 )
 
 const manifestSizeLimit = 8e6 // 8MB
@@ -217,6 +217,7 @@ func (c *Converter) fetchBlob(ctx context.Context, desc ocispec.Descriptor) erro
 	if size == -1 {
 		size = 0
 	}
+	wrappedGzipReader := false
 
 tryit:
 	cw, err := c.contentStore.Writer(ctx, ref, size, desc.Digest)
@@ -244,16 +245,18 @@ tryit:
 		}
 		defer ra.Close()
 
-		gr, err := gzip.NewReader(content.NewReader(ra))
+		r, err := compression.DecompressStream(content.NewReader(ra))
 		if err != nil {
 			return err
 		}
-		defer gr.Close()
 
-		_, err = io.Copy(calc, gr)
+		wrappedGzipReader = compression.WrappedGzipReader(r)
+		_, err = io.Copy(calc, r)
+		r.Close()
 		if err != nil {
 			return err
 		}
+
 	} else {
 		defer cw.Close()
 
@@ -267,13 +270,14 @@ tryit:
 		pr, pw := io.Pipe()
 
 		eg.Go(func() error {
-			gr, err := gzip.NewReader(pr)
+			r, err := compression.DecompressStream(pr)
 			if err != nil {
 				return err
 			}
-			defer gr.Close()
 
-			_, err = io.Copy(calc, gr)
+			wrappedGzipReader = compression.WrappedGzipReader(r)
+			_, err = io.Copy(calc, r)
+			r.Close()
 			pr.CloseWithError(err)
 			return err
 		})
@@ -285,6 +289,7 @@ tryit:
 		})
 
 		if err := eg.Wait(); err != nil {
+			log.G(ctx).Errorf("fetch blob %s error %v", desc.Digest, err)
 			return err
 		}
 	}
@@ -295,6 +300,11 @@ tryit:
 			return errors.Wrap(err, "failed to get blob info")
 		}
 		desc.Size = info.Size
+	}
+
+	if !wrappedGzipReader {
+		log.G(ctx).Debugf("change media type of layer %s from gzip to tar", desc.Digest)
+		desc.MediaType = images.MediaTypeDockerSchema2Layer
 	}
 
 	state := calc.State()
