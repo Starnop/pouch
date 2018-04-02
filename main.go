@@ -311,6 +311,9 @@ func getUnknownFlags(flagSet *pflag.FlagSet, fileFlags map[string]interface{}) e
 	var unknownFlags []string
 
 	for k := range fileFlags {
+		if k == "TLS" {
+			continue
+		}
 		f := flagSet.Lookup(k)
 		if f == nil {
 			unknownFlags = append(unknownFlags, k)
