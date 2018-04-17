@@ -106,53 +106,54 @@ func (c ContPlugin) PreCreate(in io.ReadCloser) (io.ReadCloser, error) {
 		}
 	}
 
-	// setup disk quota
-	if diskQuota := createConfig.Labels["DiskQuota"]; diskQuota != "" &&
-		len(createConfig.DiskQuota) == 0 {
-		if createConfig.DiskQuota == nil {
-			createConfig.DiskQuota = make(map[string]string)
-		}
-		for _, kv := range strings.Split(diskQuota, ",") {
-			arr := strings.SplitN(kv, "=", 2)
-			var k, v string
-			if len(arr) == 2 {
-				k, v = arr[0], arr[1]
-			} else {
-				k = ".*"
-				v = arr[0]
-			}
-			createConfig.DiskQuota[k] = v
-		}
-	}
-
 	// common vm use rich container which introduced by pouch
 	if getEnv(env, "ali_run_mode") == "vm" {
 		// convert label to env
 		for k, v := range createConfig.Labels {
 			createConfig.Env = append(createConfig.Env, fmt.Sprintf("%s=%s", escapseLableToEnvName(k), v))
 		}
-	}
 
-	// generate quota id as needed
-	if createConfig.Labels["AutoQuotaId"] == "true" {
-		if createConfig.QuotaID == "" || createConfig.QuotaID == "0" {
-			createConfig.QuotaID = "-1"
-		}
-	}
-
-	// set hostname to env
-	if getEnv(env, "HOSTNAME") == "" && createConfig.Hostname != "" {
-		found := false
-		for i, line := range createConfig.Env {
-			if strings.HasPrefix(line, "HOSTNAME=") {
-				createConfig.Env[i] = fmt.Sprintf("HOSTNAME=%s", createConfig.Hostname)
-				found = true
-				break
+		// setup disk quota
+		if diskQuota := createConfig.Labels["DiskQuota"]; diskQuota != "" &&
+			len(createConfig.DiskQuota) == 0 {
+			if createConfig.DiskQuota == nil {
+				createConfig.DiskQuota = make(map[string]string)
+			}
+			for _, kv := range strings.Split(diskQuota, ",") {
+				arr := strings.SplitN(kv, "=", 2)
+				var k, v string
+				if len(arr) == 2 {
+					k, v = arr[0], arr[1]
+				} else {
+					k = ".*"
+					v = arr[0]
+				}
+				createConfig.DiskQuota[k] = v
 			}
 		}
-		if !found {
-			createConfig.Env = append(createConfig.Env, fmt.Sprintf("HOSTNAME=%s", createConfig.Hostname))
+
+		// generate quota id as needed
+		if createConfig.Labels["AutoQuotaId"] == "true" {
+			if createConfig.QuotaID == "" || createConfig.QuotaID == "0" {
+				createConfig.QuotaID = "-1"
+			}
 		}
+		// set hostname to env
+		if getEnv(env, "HOSTNAME") == "" && createConfig.Hostname != "" {
+			found := false
+			for i, line := range createConfig.Env {
+				if strings.HasPrefix(line, "HOSTNAME=") {
+					createConfig.Env[i] = fmt.Sprintf("HOSTNAME=%s", createConfig.Hostname)
+					found = true
+					break
+				}
+			}
+			if !found {
+				createConfig.Env = append(createConfig.Env, fmt.Sprintf("HOSTNAME=%s", createConfig.Hostname))
+			}
+		}
+		createConfig.HostConfig.CapAdd = append(createConfig.HostConfig.CapAdd, "SYS_RESOURCE", "SYS_MODULE",
+			"SYS_PTRACE", "SYS_PACCT", "NET_ADMIN", "SYS_ADMIN")
 	}
 
 	// marshal it as stream and return to the caller
