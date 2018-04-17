@@ -106,3 +106,7 @@ cri-test:
 .PHONY: test
 test:
 	@bash -c "env PATH=$(PATH) hack/make.sh build integration-test cri-test"
+
+.PHONY: plugin
+plugin: pre
+	@./hack/build plugin

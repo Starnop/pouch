@@ -70,6 +70,17 @@ function clean()
     rm -rf $BUILDPATH
 }
 
+function plugin()
+{
+    plugin_name=plugins_$(date +%s)
+    binary_name=hook_plugin.so
+    cd $BUILDPATH/src/github.com/alibaba/pouch/hook_plugin
+    echo "GOOS=linux $GOBUILD -o $binary_name"
+
+    GOOS=linux go build -buildmode=plugin -ldflags "-pluginpath=$plugin_name" -o $binary_name
+    cp $binary_name ../$binary_name
+}
+
 function main ()
 {
     if [[ $# < 1 ]]; then
