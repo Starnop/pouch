@@ -916,3 +916,59 @@ func (suite *PouchRunSuite) TestRunWithDiskQuotaRegular(c *check.C) {
 	c.Assert(mount2Found, check.Equals, true)
 	c.Assert(mount3Found, check.Equals, true)
 }
+
+// TestRunWithRM is to verify the valid running container with rm flag
+func (suite *PouchRunSuite) TestRunWithRM(c *check.C) {
+	cname := "TestRunWithRM"
+	command.PouchRun("run", "--rm", "--name", cname, busyboxImage, "echo", "hello").Assert(c, icmd.Success)
+
+	output := command.PouchRun("inspect", cname).Stderr()
+	c.Assert(util.PartialEqual(output, cname+": not found"), check.IsNil)
+}
+
+// TestRunWithVolumesFrom tests running container with --volumes-from.
+func (suite *PouchRunSuite) TestRunWithVolumesFrom(c *check.C) {
+	volumeName := "volumesfrom-test-volume"
+	containerName1 := "volumesfrom-test-1"
+	containerName2 := "volumesfrom-test-2"
+
+	// create volume
+	command.PouchRun("volume", "create", "-n", volumeName).Assert(c, icmd.Success)
+	defer func() {
+		command.PouchRun("volume", "rm", volumeName).Assert(c, icmd.Success)
+	}()
+
+	// run container1
+	command.PouchRun("run", "-d",
+		"-v", volumeName+":/mnt",
+		"--name", containerName1, busyboxImage, "top").Assert(c, icmd.Success)
+	defer func() {
+		command.PouchRun("rm", "-f", containerName1).Assert(c, icmd.Success)
+	}()
+
+	// stop container1
+	command.PouchRun("stop", containerName1).Assert(c, icmd.Success)
+
+	// run container2
+	command.PouchRun("run", "-d",
+		"--volumes-from", containerName1,
+		"--name", containerName2, busyboxImage, "top").Assert(c, icmd.Success)
+	defer func() {
+		command.PouchRun("rm", "-f", containerName2).Assert(c, icmd.Success)
+	}()
+
+	// inspect container2
+	ret := command.PouchRun("inspect", containerName2)
+	ret.Assert(c, icmd.Success)
+	out := ret.Stdout()
+
+	volumeFound := false
+	for _, line := range strings.Split(out, "\n") {
+		if strings.Contains(line, "\"volumesfrom-test-volume\": \"/mnt\"") {
+			volumeFound = true
+			break
+		}
+	}
+
+	c.Assert(volumeFound, check.Equals, true)
+}

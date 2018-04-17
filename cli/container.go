@@ -3,24 +3,26 @@ package main
 import (
 	"strings"
 
+	"github.com/alibaba/pouch/apis/opts"
 	"github.com/alibaba/pouch/apis/types"
-	"github.com/alibaba/pouch/pkg/opts"
 
 	strfmt "github.com/go-openapi/strfmt"
 )
 
 type container struct {
-	labels     []string
-	name       string
-	tty        bool
-	volume     []string
-	runtime    string
-	env        []string
-	entrypoint string
-	workdir    string
-	user       string
-	groupAdd   []string
-	hostname   string
+	labels      []string
+	name        string
+	tty         bool
+	volume      []string
+	volumesFrom []string
+	runtime     string
+	env         []string
+	entrypoint  string
+	workdir     string
+	user        string
+	groupAdd    []string
+	hostname    string
+	rm          bool
 
 	blkioWeight          uint16
 	blkioWeightDevice    WeightDevice
@@ -186,8 +188,9 @@ func (c *container) config() (*types.ContainerCreateConfig, error) {
 		},
 
 		HostConfig: &types.HostConfig{
-			Binds:   c.volume,
-			Runtime: c.runtime,
+			Binds:       c.volume,
+			VolumesFrom: c.volumesFrom,
+			Runtime:     c.runtime,
 			Resources: types.Resources{
 				// cpu
 				CPUShares:  c.cpushare,
