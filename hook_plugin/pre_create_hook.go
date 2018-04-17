@@ -29,12 +29,10 @@ func (c ContPlugin) PreCreate(in io.ReadCloser) (io.ReadCloser, error) {
 		return nil, err
 	}
 	if createConfig.HostConfig == nil {
-		//fixme: something changed
 		createConfig.HostConfig = &HostConfig{}
 	}
 	requestedIP := ""
 	if createConfig.HostConfig.NetworkMode == "default" {
-		//fixme: something changed
 		createConfig.HostConfig.NetworkMode = "bridge"
 	}
 	networkMode := createConfig.HostConfig.NetworkMode
@@ -50,11 +48,9 @@ func (c ContPlugin) PreCreate(in io.ReadCloser) (io.ReadCloser, error) {
 		mask := getEnv(env, "DefaultMask")
 		nic := getEnv(env, "DefaultNic")
 		if createConfig.NetworkingConfig == nil {
-			//fixme: something changed
 			createConfig.NetworkingConfig = &NetworkingConfig{}
 		}
 		if createConfig.NetworkingConfig.EndpointsConfig == nil {
-			//fixme: something changed
 			createConfig.NetworkingConfig.EndpointsConfig = make(map[string]*EndpointSettings)
 		}
 
@@ -62,7 +58,6 @@ func (c ContPlugin) PreCreate(in io.ReadCloser) (io.ReadCloser, error) {
 			createConfig.NetworkingConfig.EndpointsConfig, env); e != nil {
 			return nil, e
 		} else if nwName != networkMode {
-			//fixme: something changed
 			createConfig.HostConfig.NetworkMode = nwName
 		}
 
@@ -78,20 +73,6 @@ func (c ContPlugin) PreCreate(in io.ReadCloser) (io.ReadCloser, error) {
 		}
 	}
 
-	// generate quota id as needed
-	//if createConfig.Labels["AutoQuotaId"] == "true" {
-	//	if createConfig.Labels["QuotaId"] == "" {
-	//		if qid, e := GetNextQuatoId(); e != nil {
-	//			return nil, e
-	//		} else {
-	//			//fixme: something changed
-	//			createConfig.Labels["QuotaId"] = strconv.Itoa(int(qid))
-	//		}
-	//	} else {
-	//		fmt.Printf("container already has quota id %s\n", createConfig.Labels["QuotaId"])
-	//	}
-	//}
-
 	if getEnv(createConfig.Env, "ali_admin_uid") == "0" && requestedIP != "" {
 		if b, ex := exec.Command("/opt/ali-iaas/pouch/bin/get_admin_uid.sh",
 			requestedIP).CombinedOutput(); ex != nil {
@@ -105,7 +86,6 @@ func (c ContPlugin) PreCreate(in io.ReadCloser) (io.ReadCloser, error) {
 				for i, oneEnv := range createConfig.Env {
 					arr := strings.SplitN(oneEnv, "=", 2)
 					if len(arr) == 2 && arr[0] == "ali_admin_uid" {
-						//fixme: something changed
 						createConfig.Env[i] = fmt.Sprintf("%s=%d", arr[0], uid)
 						break
 					}
@@ -118,7 +98,6 @@ func (c ContPlugin) PreCreate(in io.ReadCloser) (io.ReadCloser, error) {
 	mode := getEnv(createConfig.Env, "ali_run_mode")
 	if ("common_vm" == mode || "vm" == mode) && createConfig.User != "root" {
 		fmt.Printf("in common_vm mode, use root user to start container.\n")
-		//fixme: something changed
 		createConfig.User = "root"
 		for i, line := range createConfig.Env {
 			if line == "ali_run_mode=common_vm" {
@@ -130,7 +109,6 @@ func (c ContPlugin) PreCreate(in io.ReadCloser) (io.ReadCloser, error) {
 	// setup disk quota
 	if diskQuota := createConfig.Labels["DiskQuota"]; diskQuota != "" &&
 		len(createConfig.DiskQuota) == 0 {
-		//fixme: something changed
 		if createConfig.DiskQuota == nil {
 			createConfig.DiskQuota = make(map[string]string)
 		}
@@ -149,24 +127,31 @@ func (c ContPlugin) PreCreate(in io.ReadCloser) (io.ReadCloser, error) {
 
 	// common vm use rich container which introduced by pouch
 	if getEnv(env, "ali_run_mode") == "vm" {
-		////fixme: something changed
-		//createConfig.Rich = true
-		//createConfig.RichMode = "systemd"
-
 		// convert label to env
 		for k, v := range createConfig.Labels {
-			env = append(env, fmt.Sprintf("%s=%s", escapseLableToEnvName(k), v))
+			createConfig.Env = append(createConfig.Env, fmt.Sprintf("%s=%s", escapseLableToEnvName(k), v))
 		}
-
-		//fixme: something changed
-		createConfig.Env = env
 	}
 
-	// setup quotaId
+	// generate quota id as needed
 	if createConfig.Labels["AutoQuotaId"] == "true" {
 		if createConfig.QuotaID == "" || createConfig.QuotaID == "0" {
-			//fixme: something changed
 			createConfig.QuotaID = "-1"
+		}
+	}
+
+	// set hostname to env
+	if getEnv(env, "HOSTNAME") == "" && createConfig.Hostname != "" {
+		found := false
+		for i, line := range createConfig.Env {
+			if strings.HasPrefix(line, "HOSTNAME=") {
+				createConfig.Env[i] = fmt.Sprintf("HOSTNAME=%s", createConfig.Hostname)
+				found = true
+				break
+			}
+		}
+		if !found {
+			createConfig.Env = append(createConfig.Env, fmt.Sprintf("HOSTNAME=%s", createConfig.Hostname))
 		}
 	}
 
