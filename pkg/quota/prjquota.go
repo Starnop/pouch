@@ -100,7 +100,7 @@ func (quota *PrjQuota) SetSubtree(dir string, qid uint32) (uint32, error) {
 }
 
 // SetDiskQuota is used to set quota for directory.
-func (quota *PrjQuota) SetDiskQuota(dir string, size string, quotaID int) error {
+func (quota *PrjQuota) SetDiskQuota(dir string, size string, quotaID uint32) error {
 	logrus.Debugf("set disk quota, dir: %s, size: %s, quotaID: %d", dir, size, quotaID)
 	if !UseQuota {
 		return nil
@@ -114,12 +114,15 @@ func (quota *PrjQuota) SetDiskQuota(dir string, size string, quotaID int) error 
 		return fmt.Errorf("mountpoint not found: %s", dir)
 	}
 
-	id, err := quota.SetSubtree(dir, uint32(quotaID))
-	if id == 0 {
+	id, err := quota.SetSubtree(dir, quotaID)
+	if err != nil || id == 0 {
 		return fmt.Errorf("subtree not found: %s %v", dir, err)
 	}
 
 	limit, err := bytefmt.ToKilobytes(size)
+	if err != nil {
+		return fmt.Errorf("invalid size: %s %v", size, err)
+	}
 
 	// transfer limit from kbyte to byte
 	if err := quota.checkDevLimit(dir, limit*1024); err != nil {

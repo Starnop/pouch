@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"path"
+	"strings"
 
 	apitypes "github.com/alibaba/pouch/apis/types"
 	"github.com/alibaba/pouch/daemon/config"
@@ -149,26 +150,90 @@ func (nm *NetworkManager) List(ctx context.Context, labels map[string]string) ([
 	return net, nil
 }
 
-// Get returns the information of network that specified name/id.
-func (nm *NetworkManager) Get(ctx context.Context, name string) (*types.Network, error) {
+// GetNetworkByName returns the information of network that specified name.
+func (nm *NetworkManager) GetNetworkByName(name string) (*types.Network, error) {
 	n, err := nm.controller.NetworkByName(name)
 	if err != nil {
-		if err == libnetwork.ErrNoSuchNetwork(name) {
-			return nil, errors.Wrap(errtypes.ErrNotfound, err.Error())
+		return nil, err
+	}
+	return &types.Network{
+		Name:    n.Name(),
+		ID:      n.ID(),
+		Type:    n.Type(),
+		Network: n,
+	}, nil
+}
+
+// GetNetworksByPartialID returns a list of networks that ID starts with the given prefix.
+func (nm *NetworkManager) GetNetworksByPartialID(partialID string) []*types.Network {
+	var matchedNetworks []*types.Network
+
+	walker := func(nw libnetwork.Network) bool {
+		if strings.HasPrefix(nw.ID(), partialID) {
+			matchedNetwork := &types.Network{
+				Name:    nw.Name(),
+				ID:      nw.ID(),
+				Type:    nw.Type(),
+				Network: nw,
+			}
+			matchedNetworks = append(matchedNetworks, matchedNetwork)
 		}
+		return false
+	}
+	nm.controller.WalkNetworks(walker)
+	return matchedNetworks
+}
+
+// GetNetworkByPartialID returns the information of network that ID starts with the given prefix.
+// If there are not matching networks, it fails with ErrNotfound.
+// If there are multiple matching networks, it fails with ErrTooMany.
+func (nm *NetworkManager) GetNetworkByPartialID(partialID string) (*types.Network, error) {
+	network, err := nm.controller.NetworkByID(partialID)
+	if err == nil {
+		return &types.Network{
+			Name:    network.Name(),
+			ID:      network.ID(),
+			Type:    network.Type(),
+			Network: network,
+		}, nil
+	}
+	if !isNoSuchNetworkError(err) {
+		return nil, err
+	}
+	matchedNetworks := nm.GetNetworksByPartialID(partialID)
+	if len(matchedNetworks) == 0 {
+		return nil, errors.Wrap(errtypes.ErrNotfound, "network: "+partialID)
+	}
+	if len(matchedNetworks) > 1 {
+		return nil, errors.Wrap(errtypes.ErrTooMany, "network: "+partialID)
+	}
+	return matchedNetworks[0], nil
+}
+
+// isNoSuchNetworkError looks up the error type and returns a bool if it is ErrNoSuchNetwork or not.
+func isNoSuchNetworkError(err error) bool {
+	_, ok := err.(libnetwork.ErrNoSuchNetwork)
+	return ok
+}
+
+// Get returns the information of network for specified string that represent network name or ID.
+// If network name is given, the network with same name is returned.
+// If prefix of network ID is given, the network with same prefix is returned.
+func (nm *NetworkManager) Get(ctx context.Context, idName string) (*types.Network, error) {
+	n, err := nm.GetNetworkByName(idName)
+	if err != nil && !isNoSuchNetworkError(err) {
 		return nil, err
 	}
 
 	if n != nil {
-		return &types.Network{
-			Name:    name,
-			ID:      n.ID(),
-			Type:    n.Type(),
-			Network: n,
-		}, nil
+		return n, nil
 	}
 
-	return nil, nil
+	n, err = nm.GetNetworkByPartialID(idName)
+	if err != nil {
+		return nil, err
+	}
+	return n, err
 }
 
 // EndpointCreate is used to create network endpoint.
@@ -192,7 +257,7 @@ func (nm *NetworkManager) EndpointCreate(ctx context.Context, endpoint *types.En
 	}
 
 	// create endpoint
-	epOptions, err := endpointOptions(n, networkConfig, endpointConfig)
+	epOptions, err := endpointOptions(n, endpoint)
 	if err != nil {
 		return "", err
 	}
@@ -200,36 +265,40 @@ func (nm *NetworkManager) EndpointCreate(ctx context.Context, endpoint *types.En
 	endpointName := containerID[:8]
 	ep, err := n.CreateEndpoint(endpointName, epOptions...)
 	if err != nil {
-		logrus.Errorf("failed to create endpoint, err: %v", err)
 		return "", err
 	}
+
+	defer func() {
+		if err != nil {
+			if err := ep.Delete(true); err != nil {
+				logrus.Errorf("could not delete endpoint %s after failing to create endpoint: %v", ep.Name(), err)
+			}
+		}
+	}()
 
 	// create sandbox
 	sb := nm.getNetworkSandbox(containerID)
 	if sb == nil {
 		sandboxOptions, err := nm.sandboxOptions(endpoint)
 		if err != nil {
-			logrus.Errorf("failed to build sandbox options, err: %v", err)
-			return "", err
+			return "", fmt.Errorf("failed to build sandbox options: %v", err)
 		}
 
 		sb, err = nm.controller.NewSandbox(containerID, sandboxOptions...)
 		if err != nil {
-			logrus.Errorf("failed to create sandbox, err: %v", err)
-			return "", err
+			return "", fmt.Errorf("failed to create sandbox: %v", err)
 		}
 	}
 	networkConfig.SandboxID = sb.ID()
 	networkConfig.SandboxKey = sb.Key()
 
 	// endpoint joins into sandbox
-	joinOptions, err := joinOptions(endpointConfig)
+	joinOptions, err := joinOptions(endpoint)
 	if err != nil {
 		return "", err
 	}
 	if err := ep.Join(sb, joinOptions...); err != nil {
-		logrus.Errorf("failed to join sandbox, err: %v", err)
-		return "", err
+		return "", fmt.Errorf("failed to join sandbox: %v", err)
 	}
 
 	// update endpoint settings
@@ -249,7 +318,7 @@ func (nm *NetworkManager) EndpointCreate(ctx context.Context, endpoint *types.En
 		if iface.Address() != nil {
 			mask, _ := iface.Address().Mask.Size()
 			endpointConfig.IPPrefixLen = int64(mask)
-			endpointConfig.IPAddress = iface.Address().String()
+			endpointConfig.IPAddress = iface.Address().IP.String()
 		}
 
 		if iface.MacAddress() != nil {
@@ -424,9 +493,9 @@ func initNetworkLog(cfg *config.Config) {
 	netlog.SetFormatter(formatter)
 }
 
-func endpointOptions(n libnetwork.Network, nwconfig *apitypes.NetworkSettings, epConfig *apitypes.EndpointSettings) ([]libnetwork.EndpointOption, error) {
+func endpointOptions(n libnetwork.Network, endpoint *types.Endpoint) ([]libnetwork.EndpointOption, error) {
 	var createOptions []libnetwork.EndpointOption
-
+	epConfig := endpoint.EndpointConfig
 	if epConfig != nil {
 		ipam := epConfig.IPAMConfig
 		if ipam != nil && (ipam.IPV4Address != "" || ipam.IPV6Address != "" || len(ipam.LinkLocalIps) > 0) {
@@ -447,6 +516,13 @@ func endpointOptions(n libnetwork.Network, nwconfig *apitypes.NetworkSettings, e
 
 	genericOption := options.Generic{}
 	createOptions = append(createOptions, libnetwork.EndpointOptionGeneric(genericOption))
+
+	if len(endpoint.GenericParams) > 0 {
+		createOptions = append(createOptions, libnetwork.EndpointOptionGeneric(endpoint.GenericParams))
+	}
+	if endpoint.DisableResolver {
+		createOptions = append(createOptions, libnetwork.CreateOptionDisableResolution())
+	}
 
 	return createOptions, nil
 }
@@ -584,9 +660,11 @@ func (nm *NetworkManager) cleanEndpointConfig(epConfig *apitypes.EndpointSetting
 	epConfig.MacAddress = ""
 }
 
-func joinOptions(epConfig *apitypes.EndpointSettings) ([]libnetwork.EndpointOption, error) {
+func joinOptions(endpoint *types.Endpoint) ([]libnetwork.EndpointOption, error) {
 	var joinOptions []libnetwork.EndpointOption
 	// TODO: parse endpoint's links
 
+	// set priority option
+	joinOptions = append(joinOptions, libnetwork.JoinOptionPriority(nil, endpoint.Priority))
 	return joinOptions, nil
 }

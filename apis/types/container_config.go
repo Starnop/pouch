@@ -79,6 +79,9 @@ type ContainerConfig struct {
 	// Open `stdin`
 	OpenStdin bool `json:"OpenStdin,omitempty"`
 
+	// set disk quota by specified quota id, if id < 0, it means pouchd alloc a unique quota id
+	QuotaID string `json:"QuotaID,omitempty"`
+
 	// Whether to start container in rich container mode. (default false)
 	Rich bool `json:"Rich,omitempty"`
 
@@ -87,6 +90,9 @@ type ContainerConfig struct {
 
 	// Shell for when `RUN`, `CMD`, and `ENTRYPOINT` uses a shell.
 	Shell []string `json:"Shell"`
+
+	// annotations send to runtime spec.
+	SpecAnnotation map[string]string `json:"SpecAnnotation,omitempty"`
 
 	// Close `stdin` after one attached client disconnects
 	StdinOnce bool `json:"StdinOnce,omitempty"`
@@ -146,11 +152,15 @@ type ContainerConfig struct {
 
 /* polymorph ContainerConfig OpenStdin false */
 
+/* polymorph ContainerConfig QuotaID false */
+
 /* polymorph ContainerConfig Rich false */
 
 /* polymorph ContainerConfig RichMode false */
 
 /* polymorph ContainerConfig Shell false */
+
+/* polymorph ContainerConfig SpecAnnotation false */
 
 /* polymorph ContainerConfig StdinOnce false */
 

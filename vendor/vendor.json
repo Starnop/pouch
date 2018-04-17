@@ -712,6 +712,18 @@
 			"revisionTime": "2017-11-08T19:22:26Z"
 		},
 		{
+			"checksumSHA1": "dZco6VUDLAAr8bpGJibQONFCblQ=",
+			"path": "github.com/opencontainers/selinux/go-selinux",
+			"revision": "76b408a8e68e301b8245ba414ab600a0d1d797d9",
+			"revisionTime": "2018-01-04T21:15:34Z"
+		},
+		{
+			"checksumSHA1": "6+RKZPTLnmLcjCDXF+Z96QejmPs=",
+			"path": "github.com/opencontainers/selinux/go-selinux/label",
+			"revision": "76b408a8e68e301b8245ba414ab600a0d1d797d9",
+			"revisionTime": "2018-01-04T21:15:34Z"
+		},
+		{
 			"checksumSHA1": "Se195FlZ160eaEk/uVx4KdTPSxU=",
 			"path": "github.com/pborman/uuid",
 			"revision": "e790cca94e6cc75c7064b1332e63811d4aae1a53",
@@ -883,6 +895,12 @@
 			"path": "golang.org/x/net/trace",
 			"revision": "2b8ed96d2a422bf205adcdfa05272dc12c81613b",
 			"revisionTime": "2017-11-08T19:22:26Z"
+		},
+		{
+			"checksumSHA1": "7EZyXN0EmZLgGxZxK01IJua4c8o=",
+			"path": "golang.org/x/net/websocket",
+			"revision": "6078986fec03a1dcc236c34816c71b0e05018fda",
+			"revisionTime": "2017-09-09T04:35:08Z"
 		},
 		{
 			"checksumSHA1": "S0DP7Pn7sZUmXc55IzZnNvERu6s=",
@@ -1076,6 +1094,12 @@
 			"revisionTime": "2017-10-16T04:50:13Z"
 		},
 		{
+			"checksumSHA1": "bZ27LG+9gcgepmBEzYoKKcLLPvA=",
+			"path": "k8s.io/apimachinery/pkg/util/runtime",
+			"revision": "210bcde8e5a7715fe776460ca1df1a3f2738725e",
+			"revisionTime": "2018-03-27T06:20:08Z"
+		},
+		{
 			"checksumSHA1": "2p066REe+o1932lveLsySRedt9E=",
 			"path": "k8s.io/apimachinery/pkg/util/sets",
 			"revision": "e9a29eff7d472df0f7da9ead5ab59b74e74a07ec",
@@ -1098,6 +1122,12 @@
 			"path": "k8s.io/apimachinery/third_party/forked/golang/reflect",
 			"revision": "e9a29eff7d472df0f7da9ead5ab59b74e74a07ec",
 			"revisionTime": "2017-10-16T04:50:13Z"
+		},
+		{
+			"checksumSHA1": "AF128a2le0Bdq7PiTKz0P5/lgko=",
+			"path": "k8s.io/apiserver/pkg/util/wsstream",
+			"revision": "d3f753a815b5b1a7f4ecc1d2fdf497dc715c98c7",
+			"revisionTime": "2017-10-18T16:57:59Z"
 		},
 		{
 			"checksumSHA1": "oRQMrak6qTTdEUnRUMtVpzO9T/A=",

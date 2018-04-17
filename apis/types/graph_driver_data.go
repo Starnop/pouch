@@ -13,7 +13,7 @@ import (
 	"github.com/go-openapi/validate"
 )
 
-// GraphDriverData Information about a container's graph driver.
+// GraphDriverData Information about a container's snapshotter.
 // swagger:model GraphDriverData
 
 type GraphDriverData struct {

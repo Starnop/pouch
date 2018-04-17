@@ -61,13 +61,38 @@ func WithDefaultTagIfMissing(named Named) Named {
 
 // Domain retrieves domain information. Domain include registry address and
 // repository namespace, like registry.hub.docker.com/library/ubuntu.
-func Domain(named string) (string, bool) {
-	i := strings.LastIndexByte(named, '/')
+func Domain(imageRef string) (string, bool) {
+	i := strings.LastIndexByte(imageRef, '/')
 
-	// FIXME: The domain should contain the . or :, how to handle the case
-	// which image name contains . or :?
-	if i == -1 || !strings.ContainsAny(named, ".:") {
+	// NOTE: in the following two conditions, imageRef doesn't contain domain:
+	// 1. No '/' in imageRef.
+	// 2. Apart from the name, the rest of imageRef should contain '.' or ':'.
+	if i == -1 || !strings.ContainsAny(imageRef[:i], ".:") {
 		return "", false
 	}
-	return named[:i], true
+	return imageRef[:i], true
+}
+
+// splitHostname splits HostName and RemoteName for the given reference.
+// Since we use user defined default registry, if HostName is null, we will return null.
+func splitHostname(ref string) (string, string) {
+	i := strings.IndexRune(ref, '/')
+	if i == -1 || !strings.ContainsAny(ref[:i], ".:") {
+		return "", ref
+	}
+	return ref[:i], ref[i+1:]
+}
+
+// IsNameOnly checks if only image repo name only, like busybox.
+func IsNameOnly(ref string) bool {
+	h, r := splitHostname(ref)
+	if h != "" {
+		return false
+	}
+
+	if strings.Contains(r, "/") {
+		return false
+	}
+
+	return true
 }

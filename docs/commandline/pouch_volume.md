@@ -6,6 +6,10 @@ Manage pouch volumes
 
 Manager the volumes in pouchd. It contains the functions of create/remove/list/inspect volume, 'driver' is used to list drivers that pouch support. The default volume driver is local, it will make a directory to bind into container.
 
+```
+pouch volume [command]
+```
+
 ### Options
 
 ```
@@ -26,7 +30,7 @@ Manager the volumes in pouchd. It contains the functions of create/remove/list/i
 
 * [pouch](pouch.md)	 - An efficient container engine
 * [pouch volume create](pouch_volume_create.md)	 - Create a volume
-* [pouch volume inspect](pouch_volume_inspect.md)	 - Inspect a pouch volume
+* [pouch volume inspect](pouch_volume_inspect.md)	 - Inspect one or more pouch volumes
 * [pouch volume list](pouch_volume_list.md)	 - List volumes
 * [pouch volume remove](pouch_volume_remove.md)	 - Remove a volume
 

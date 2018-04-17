@@ -9,7 +9,6 @@ import (
 
 	"github.com/alibaba/pouch/apis/types"
 	"github.com/alibaba/pouch/cri/stream/remotecommand"
-	"github.com/alibaba/pouch/ctrd"
 	"github.com/alibaba/pouch/pkg/meta"
 	"github.com/alibaba/pouch/pkg/utils"
 
@@ -25,20 +24,25 @@ const (
 // container in the store.
 type ContainerFilter func(*ContainerMeta) bool
 
-type containerExecConfig struct {
+// ContainerExecConfig is the config a process exec.
+type ContainerExecConfig struct {
+	// ExecID identifies the ID of this exec
+	ExecID string
+
+	// contains the config of this exec
 	types.ExecCreateConfig
 
 	// Save the container's id into exec config.
 	ContainerID string
 
-	// Get exit message from exitCh, we could only get it once.
-	// Do we need to get the result of exec many times?
-	exitCh chan *ctrd.Message
-}
+	// ExitCode records the exit code of a exec process.
+	ExitCode int64
 
-// ContainerExecInspect holds low-level information about exec command.
-type ContainerExecInspect struct {
-	ExitCh chan *ctrd.Message
+	// Running represents whether the exec process is running inside container.
+	Running bool
+
+	// Error represents the exec process response error.
+	Error error
 }
 
 // AttachConfig wraps some infos of attaching.
@@ -99,6 +103,11 @@ type ContainerMeta struct {
 
 	// exec ids
 	ExecIds string `json:"ExecIDs,omitempty"`
+
+	// Snapshotter, GraphDriver is same, keep both
+	// just for compatibility
+	// snapshotter informations of container
+	Snapshotter *types.SnapshotterData `json:"Snapshotter,omitempty"`
 
 	// graph driver
 	GraphDriver *types.GraphDriverData `json:"GraphDriver,omitempty"`
@@ -171,11 +180,13 @@ func (meta *ContainerMeta) merge(getconfig func() (v1.ImageConfig, error)) error
 		return err
 	}
 
+	// If user specify the Entrypoint, no need to merge image's configuration.
+	// Otherwise use the image's configuration to fill it.
 	if len(meta.Config.Entrypoint) == 0 {
+		if len(meta.Config.Cmd) == 0 {
+			meta.Config.Cmd = config.Cmd
+		}
 		meta.Config.Entrypoint = config.Entrypoint
-	}
-	if len(meta.Config.Cmd) == 0 {
-		meta.Config.Cmd = config.Cmd
 	}
 	if meta.Config.Env == nil {
 		meta.Config.Env = config.Env

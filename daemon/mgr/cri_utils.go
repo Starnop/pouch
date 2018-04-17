@@ -477,6 +477,35 @@ func getAppArmorSecurityOpts(sc *runtime.LinuxContainerSecurityContext) ([]strin
 	return []string{fmt.Sprintf("apparmor=%s", profile)}, nil
 }
 
+func getSELinuxSecurityOpts(sc *runtime.LinuxContainerSecurityContext) ([]string, error) {
+	if sc.SelinuxOptions == nil {
+		return nil, nil
+	}
+
+	var result []string
+	selinuxOpts := sc.SelinuxOptions
+	// Should ignore incomplete selinuxOpts.
+	if selinuxOpts.GetUser() == "" ||
+		selinuxOpts.GetRole() == "" ||
+		selinuxOpts.GetType() == "" ||
+		selinuxOpts.GetLevel() == "" {
+		return nil, nil
+	}
+
+	for k, v := range map[string]string{
+		"user":  selinuxOpts.User,
+		"role":  selinuxOpts.Role,
+		"type":  selinuxOpts.Type,
+		"level": selinuxOpts.Level,
+	} {
+		if len(v) > 0 {
+			result = append(result, fmt.Sprintf("label=%s:%s", k, v))
+		}
+	}
+
+	return result, nil
+}
+
 // getSeccompSecurityOpts get container seccomp options from container seccomp profiles.
 func getSeccompSecurityOpts(sc *runtime.LinuxContainerSecurityContext) ([]string, error) {
 	profile := sc.SeccompProfilePath
@@ -525,6 +554,13 @@ func modifyHostConfig(sc *runtime.LinuxContainerSecurityContext, hostConfig *api
 		return fmt.Errorf("failed to generate seccomp security options: %v", err)
 	}
 	hostConfig.SecurityOpt = append(hostConfig.SecurityOpt, seccompSecurityOpts...)
+
+	// Apply SELinux options.
+	selinuxSecurityOpts, err := getSELinuxSecurityOpts(sc)
+	if err != nil {
+		return fmt.Errorf("failed to generate SELinux security options: %v", err)
+	}
+	hostConfig.SecurityOpt = append(hostConfig.SecurityOpt, selinuxSecurityOpts...)
 
 	// Apply appArmor options.
 	appArmorSecurityOpts, err := getAppArmorSecurityOpts(sc)
@@ -686,22 +722,28 @@ func imageToCriImage(image *apitypes.ImageInfo) (*runtime.Image, error) {
 }
 
 // ensureSandboxImageExists pulls the image when it's not present.
-func (c *CriManager) ensureSandboxImageExists(ctx context.Context, image string) error {
-	_, err := c.ImageMgr.GetImage(ctx, image)
+func (c *CriManager) ensureSandboxImageExists(ctx context.Context, imageRef string) error {
+	_, err := c.ImageMgr.GetImage(ctx, imageRef)
 	// TODO: maybe we should distinguish NotFound error with others.
 	if err == nil {
 		return nil
 	}
 
-	namedRef, err := reference.ParseNamedReference(image)
+	refNamed, err := reference.ParseNamedReference(imageRef)
 	if err != nil {
-		return fmt.Errorf("parse image name failed: %v", err)
+		return err
 	}
-	taggedRef := reference.WithDefaultTagIfMissing(namedRef).(reference.Tagged)
 
-	err = c.ImageMgr.PullImage(ctx, taggedRef.Name(), taggedRef.Tag(), nil, bytes.NewBuffer([]byte{}))
+	_, ok := refNamed.(reference.Digested)
+	if !ok {
+		// If the imageRef is not a digest.
+		refTagged := reference.WithDefaultTagIfMissing(refNamed).(reference.Tagged)
+		imageRef = refTagged.String()
+	}
+
+	err = c.ImageMgr.PullImage(ctx, imageRef, nil, bytes.NewBuffer([]byte{}))
 	if err != nil {
-		return fmt.Errorf("pull sandbox image %q failed: %v", image, err)
+		return fmt.Errorf("pull sandbox image %q failed: %v", imageRef, err)
 	}
 
 	return nil

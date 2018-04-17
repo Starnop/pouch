@@ -7,6 +7,7 @@ import (
 
 	"github.com/alibaba/pouch/apis/types"
 
+	units "github.com/docker/go-units"
 	"github.com/spf13/cobra"
 )
 
@@ -55,9 +56,9 @@ func (v *InfoCommand) runInfo() error {
 
 func prettyPrintInfo(cli *Cli, info *types.SystemInfo) error {
 	fmt.Fprintln(os.Stdout, "Containers:", info.Containers)
-	fmt.Fprintln(os.Stdout, "Running:", info.ContainersRunning)
-	fmt.Fprintln(os.Stdout, "Paused:", info.ContainersPaused)
-	fmt.Fprintln(os.Stdout, "Stopped:", info.ContainersStopped)
+	fmt.Fprintln(os.Stdout, " Running:", info.ContainersRunning)
+	fmt.Fprintln(os.Stdout, " Paused:", info.ContainersPaused)
+	fmt.Fprintln(os.Stdout, " Stopped:", info.ContainersStopped)
 	fmt.Fprintln(os.Stdout, "Images: ", info.Images)
 	fmt.Fprintln(os.Stdout, "ID:", info.ID)
 	fmt.Fprintln(os.Stdout, "Name:", info.Name)
@@ -89,10 +90,15 @@ func prettyPrintInfo(cli *Cli, info *types.SystemInfo) error {
 	fmt.Fprintln(os.Stdout, "Registry:", info.IndexServerAddress)
 	fmt.Fprintln(os.Stdout, "Experimental:", info.ExperimentalBuild)
 	fmt.Fprintln(os.Stdout, "Debug:", info.Debug)
-	fmt.Fprintln(os.Stdout, "Labels:", info.Labels)
+	if len(info.Labels) != 0 {
+		fmt.Fprintln(os.Stdout, "Labels:")
+		for _, label := range info.Labels {
+			fmt.Fprintf(os.Stdout, "  %s\n", label)
+		}
+	}
 
 	fmt.Fprintln(os.Stdout, "CPUs:", info.NCPU)
-	fmt.Fprintln(os.Stdout, "Total Memory:", info.MemTotal)
+	fmt.Fprintln(os.Stdout, "Total Memory: "+units.BytesSize(float64(info.MemTotal)))
 	fmt.Fprintln(os.Stdout, "Pouch Root Dir:", info.PouchRootDir)
 	fmt.Fprintln(os.Stdout, "LiveRestoreEnabled:", info.LiveRestoreEnabled)
 	if info.RegistryConfig != nil && (len(info.RegistryConfig.InsecureRegistryCIDRs) > 0 || len(info.RegistryConfig.IndexConfigs) > 0) {
@@ -124,9 +130,9 @@ func prettyPrintInfo(cli *Cli, info *types.SystemInfo) error {
 func infoExample() string {
 	return `$ pouch info
 Containers: 1
-Running: 1
-Paused: 0
-Stopped: 0
+ Running: 1
+ Paused: 0
+ Stopped: 0
 Images:  0
 ID:
 Name:
@@ -142,7 +148,7 @@ Kernel Version: 3.10.0-693.17.1.el7.x86_64
 Operating System:
 OSType: linux
 Architecture:
-HTTP Proxy:
+HTTP Proxy: http://127.0.0.1:5678
 HTTPS Proxy:
 Registry: https://index.docker.io/v1/
 Experimental: false

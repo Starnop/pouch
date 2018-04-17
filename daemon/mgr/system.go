@@ -1,16 +1,22 @@
 package mgr
 
 import (
+	"fmt"
+	"os"
 	"runtime"
+	"strings"
 	"sync/atomic"
 
 	"github.com/alibaba/pouch/apis/types"
 	"github.com/alibaba/pouch/daemon/config"
+	"github.com/alibaba/pouch/pkg/errtypes"
 	"github.com/alibaba/pouch/pkg/kernel"
 	"github.com/alibaba/pouch/pkg/meta"
+	"github.com/alibaba/pouch/pkg/system"
 	"github.com/alibaba/pouch/registry"
 	"github.com/alibaba/pouch/version"
 
+	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
 
@@ -19,6 +25,7 @@ type SystemMgr interface {
 	Info() (types.SystemInfo, error)
 	Version() (types.SystemVersion, error)
 	Auth(*types.AuthConfig) (string, error)
+	UpdateDaemon(*types.DaemonUpdateConfig) error
 }
 
 // SystemManager is an instance of system management.
@@ -68,7 +75,28 @@ func (mgr *SystemManager) Info() (types.SystemInfo, error) {
 		return nil
 	})
 
-	inf := types.SystemInfo{
+	hostname := "<unknown>"
+	if name, err := os.Hostname(); err != nil {
+		logrus.Warnf("failed to get hostname: %v", err)
+	} else {
+		hostname = name
+	}
+
+	totalMem := int64(0)
+	if mem, err := system.GetTotalMem(); err != nil {
+		logrus.Warnf("failed to get system mem: %v", err)
+	} else {
+		totalMem = int64(mem)
+	}
+
+	OSName := "<unknown>"
+	if osName, err := system.GetOSName(); err != nil {
+		logrus.Warnf("failed to get operating system: %v", err)
+	} else {
+		OSName = osName
+	}
+
+	info := types.SystemInfo{
 		// architecture: ,
 		// CgroupDriver: ,
 		// ContainerdCommit: ,
@@ -78,24 +106,26 @@ func (mgr *SystemManager) Info() (types.SystemInfo, error) {
 		ContainersStopped: cStopped,
 		Debug:             mgr.config.Debug,
 		DefaultRuntime:    mgr.config.DefaultRuntime,
-		// Driver: ,
+		// FIXME: avoid hard code
+		Driver: "overlayfs",
 		// DriverStatus: ,
 		// ExperimentalBuild: ,
-		// HTTPProxy: ,
+		HTTPProxy: mgr.config.ImageProxy,
 		// HTTPSProxy: ,
 		// ID: ,
 		// Images: ,
 		IndexServerAddress: "https://index.docker.io/v1/",
+		DefaultRegistry:    mgr.config.DefaultRegistry,
 		KernelVersion:      kernelVersion,
-		// Labels: ,
+		Labels:             mgr.config.Labels,
 		// LiveRestoreEnabled: ,
 		// LoggingDriver: ,
-		// MemTotal: ,
-		// Name: ,
-		// NCPU: ,
-		// OperatingSystem: ,
-		OSType:       runtime.GOOS,
-		PouchRootDir: mgr.config.HomeDir,
+		MemTotal:        totalMem,
+		Name:            hostname,
+		NCPU:            int64(runtime.NumCPU()),
+		OperatingSystem: OSName,
+		OSType:          runtime.GOOS,
+		PouchRootDir:    mgr.config.HomeDir,
 		// RegistryConfig: ,
 		// RuncCommit: ,
 		// Runtimes: ,
@@ -103,7 +133,7 @@ func (mgr *SystemManager) Info() (types.SystemInfo, error) {
 		ServerVersion:   version.Version,
 		ListenAddresses: mgr.config.Listen,
 	}
-	return inf, nil
+	return info, nil
 }
 
 // Version shows version of daemon.
@@ -130,4 +160,39 @@ func (mgr *SystemManager) Version() (types.SystemVersion, error) {
 // Auth to log in to a registry.
 func (mgr *SystemManager) Auth(auth *types.AuthConfig) (string, error) {
 	return mgr.registry.Auth(auth)
+}
+
+// UpdateDaemon updates config of daemon, only label and image proxy are allowed.
+func (mgr *SystemManager) UpdateDaemon(cfg *types.DaemonUpdateConfig) error {
+	if cfg == nil || (len(cfg.Labels) == 0 && cfg.ImageProxy == "") {
+		return errors.Wrap(errtypes.ErrInvalidParam, fmt.Sprintf("daemon update config cannot be empty"))
+	}
+
+	daemonCfg := mgr.config
+
+	daemonCfg.Lock()
+
+	daemonCfg.ImageProxy = cfg.ImageProxy
+
+	length := len(daemonCfg.Labels)
+	for _, newLabel := range cfg.Labels {
+		appearedKey := false
+		newLabelSlice := strings.SplitN(newLabel, "=", 2)
+		for i := 0; i < length; i++ {
+			oldLabelSlice := strings.SplitN(daemonCfg.Labels[i], "=", 2)
+			if newLabelSlice[0] == oldLabelSlice[0] {
+				// newLabel's key already appears in daemon's origin labels
+				daemonCfg.Labels[i] = newLabel
+				appearedKey = true
+				continue
+			}
+		}
+		if !appearedKey {
+			daemonCfg.Labels = append(daemonCfg.Labels, newLabel)
+		}
+	}
+
+	daemonCfg.Unlock()
+
+	return nil
 }

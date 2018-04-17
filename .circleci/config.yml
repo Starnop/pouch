@@ -3,11 +3,11 @@
 # Check https://circleci.com/docs/2.0/language-go/ for more details
 version: 2
 jobs:
-  build:
+  markdown-lint-docs:
     docker:
       # specify the version
       - image: allencloud/mdl:v0.4
-      
+    
       # Specify service dependencies here if necessary
       # CircleCI maintains a library of pre-built images
       # documented at https://circleci.com/docs/2.0/circleci-images/
@@ -22,6 +22,46 @@ jobs:
       - checkout
 
       # specify any bash command here prefixed with `run: `
-      - run: 
+      - run:
           name: use markdownlint v0.4.0 to lint markdown file (https://github.com/markdownlint/markdownlint)
-          command: find  ./ -name  "*.md" | grep -v vendor | grep -v extra | grep -v commandline | grep -v .github | grep -v swagger | grep -v api | xargs mdl
+          command: |
+            find  ./ -name  "*.md" | grep -v vendor | grep -v extra |  grep -v commandline |  grep -v .github |  grep -v swagger |  grep -v api |  xargs mdl -r ~MD013,~MD024,~MD029,~MD033,~MD036
+
+  code-check:
+    docker: 
+      - image: golang:1.9.1
+    working_directory: /go/src/github.com/{{ORG_NAME}}/{{REPO_NAME}}
+    steps:
+      - checkout
+      - run: 
+          name: install golint
+          command: go get github.com/golang/lint/golint
+      - run: 
+          name: install swagger-0.12.0
+          command: |
+            wget --quiet -O /bin/swagger https://github.com/go-swagger/go-swagger/releases/download/0.12.0/swagger_linux_amd64
+            chmod +x /bin/swagger
+      - run: 
+          name: use check target in Makefile to check code
+          command: make check
+  
+  unit-test:
+    docker:
+      - image: golang:1.9.1
+    working_directory: /go/src/github.com/{{ORG_NAME}}/{{REPO_NAME}}
+    steps:
+      - checkout
+      - run:
+          name: unit test
+          command: make unit-test
+      - run:
+          name: upload code coverage report
+          command: bash <(curl -s https://codecov.io/bash)
+
+workflows:
+  version: 2
+  ci:
+    jobs:
+      - markdown-lint-docs
+      - code-check
+      - unit-test

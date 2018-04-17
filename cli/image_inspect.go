@@ -22,10 +22,10 @@ type ImageInspectCommand struct {
 func (i *ImageInspectCommand) Init(c *Cli) {
 	i.cli = c
 	i.cmd = &cobra.Command{
-		Use:   "inspect [OPTIONS] IMAGE",
-		Short: "Display detailed information on one image",
+		Use:   "inspect [OPTIONS] IMAGE [IMAGE...]",
+		Short: "Display detailed information on one or more images",
 		Long:  imageInspectDescription,
-		Args:  cobra.ExactArgs(1),
+		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return i.runInspect(args)
 		},
@@ -43,13 +43,12 @@ func (i *ImageInspectCommand) addFlags() {
 func (i *ImageInspectCommand) runInspect(args []string) error {
 	ctx := context.Background()
 	apiClient := i.cli.Client()
-	name := args[0]
 
 	getRefFunc := func(ref string) (interface{}, error) {
 		return apiClient.ImageInspect(ctx, ref)
 	}
 
-	return inspect.Inspect(os.Stdout, name, i.format, getRefFunc)
+	return inspect.Inspect(os.Stdout, args, i.format, getRefFunc)
 }
 
 // example shows examples in inspect command, and is used in auto-generated cli docs.

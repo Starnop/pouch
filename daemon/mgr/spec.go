@@ -34,6 +34,8 @@ var setupFunc = []SetupFunc{
 	// cgroup
 	setupCgroupCPUShare,
 	setupCgroupCPUSet,
+	setupCgroupCPUPeriod,
+	setupCgroupCPUQuota,
 	setupCgroupMemory,
 	setupCgroupMemorySwap,
 	setupCgroupMemorySwappiness,
@@ -60,6 +62,7 @@ var setupFunc = []SetupFunc{
 	setupAppArmor,
 	setupCapabilities,
 	setupSeccomp,
+	setupSELinux,
 
 	// blkio spec
 	setupBlkio,

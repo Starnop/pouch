@@ -40,6 +40,7 @@ check: pre fmt lint vet validate-swagger
 .PHONY: fmt
 fmt: ## run go fmt
 	@echo $@
+	@which gofmt
 	@test -z "$$(gofmt -s -l . 2>/dev/null | grep -Fv 'vendor/' | grep -Fv 'extra/' | grep -v ".pb.go$$" | tee /dev/stderr)" || \
 		(echo "please format Go code with 'gofmt -s -w'" && false)
 	@test -z "$$(find . -path ./vendor -prune -o ! -path ./extra -prune -o ! -name timestamp.proto ! -name duration.proto -name '*.proto' -type f -exec grep -Hn -e "^ " {} \; | tee /dev/stderr)" || \
@@ -50,6 +51,7 @@ fmt: ## run go fmt
 .PHONY: lint
 lint: ## run go lint
 	@echo $@
+	@which golint
 	@test -z "$$(golint ./... | grep -Fv 'vendor/' | grep -Fv 'extra' | grep -v ".pb.go:" | tee /dev/stderr)"
 
 .PHONY: vet
@@ -95,12 +97,12 @@ uninstall:
 # Ref https://unix.stackexchange.com/questions/83191/how-to-make-sudo-preserve-path
 .PHONY: integration-test
 integration-test:
-	@bash -c "env PATH=$(PATH) hack/make.sh check build integration-test"
+	@bash -c "env PATH=$(PATH) hack/make.sh build integration-test"
 
 .PHONY: cri-test
 cri-test:
-	@bash -c "env PATH=$(PATH) hack/make.sh check build cri-test"
+	@bash -c "env PATH=$(PATH) hack/make.sh build cri-test"
 
 .PHONY: test
 test:
-	@bash -c "env PATH=$(PATH) hack/make.sh check build unit-test integration-test cri-test"
+	@bash -c "env PATH=$(PATH) hack/make.sh build integration-test cri-test"

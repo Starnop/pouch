@@ -750,6 +750,76 @@ POST /containers/{id}/upgrade
 * Container
 
 
+<a name="daemon-update-post"></a>
+### Update daemon's labels and image proxy
+```
+POST /daemon/update
+```
+
+
+#### Parameters
+
+|Type|Name|Description|Schema|
+|---|---|---|---|
+|**Body**|**DaemonUpdateConfig**  <br>*optional*|Config used to update daemon, only labels and image proxy are allowed.|[DaemonUpdateConfig](#daemonupdateconfig)|
+
+
+#### Responses
+
+|HTTP Code|Description|Schema|
+|---|---|---|
+|**200**|no error|No Content|
+|**400**|bad parameter|[Error](#error)|
+|**500**|An unexpected server error occured.|[Error](#error)|
+
+
+#### Consumes
+
+* `application/json`
+
+
+#### Produces
+
+* `application/json`
+
+
+<a name="execinspect"></a>
+### Inspect an exec instance
+```
+GET /exec/{id}/json
+```
+
+
+#### Description
+Return low-level information about an exec instance.
+
+
+#### Parameters
+
+|Type|Name|Description|Schema|
+|---|---|---|---|
+|**Path**|**id**  <br>*required*|Exec instance ID|string|
+
+
+#### Responses
+
+|HTTP Code|Description|Schema|
+|---|---|---|
+|**200**|No error|[ContainerExecInspect](#containerexecinspect)|
+|**404**|No such exec instance|[4ErrorResponse](#4errorresponse)|
+|**500**|Server error|[0ErrorResponse](#0errorresponse)|
+
+
+#### Produces
+
+* `application/json`
+
+
+#### Tags
+
+* Exec
+
+
 <a name="execstart"></a>
 ### Start an exec instance
 ```
@@ -1406,7 +1476,7 @@ GET "/containers/json"
 |**Command**  <br>*optional*||string|
 |**Created**  <br>*optional*|Created time of container in daemon.|integer (int64)|
 |**HostConfig**  <br>*optional*|In Moby's API, HostConfig field in Container struct has following type <br>struct { NetworkMode string `json:",omitempty"` }<br>In Pouch, we need to pick runtime field in HostConfig from daemon side to judge runtime type,<br>So Pouch changes this type to be the complete HostConfig.<br>Incompatibility exists, ATTENTION.|[HostConfig](#hostconfig)|
-|**ID**  <br>*optional*||string|
+|**Id**  <br>*optional*|Container ID|string|
 |**Image**  <br>*optional*||string|
 |**ImageID**  <br>*optional*||string|
 |**Labels**  <br>*optional*||< string, string > map|
@@ -1447,6 +1517,7 @@ Configuration for a container that is portable between hosts
 |**Rich**  <br>*optional*|Whether to start container in rich container mode. (default false)|boolean|
 |**RichMode**  <br>*optional*|Choose one rich container mode.(default dumb-init)|enum (dumb-init, sbin-init, systemd)|
 |**Shell**  <br>*optional*|Shell for when `RUN`, `CMD`, and `ENTRYPOINT` uses a shell.|< string > array|
+|**SpecAnnotation**  <br>*optional*|annotations send to runtime spec.|< string, string > map|
 |**StdinOnce**  <br>*optional*|Close `stdin` after one attached client disconnects|boolean|
 |**StopSignal**  <br>*optional*|Signal to stop a container as a string or unsigned integer.  <br>**Default** : `"SIGTERM"`|string|
 |**StopTimeout**  <br>*optional*|Timeout to stop a container in seconds.|integer|
@@ -1490,6 +1561,7 @@ It can be used to encode client params in client and unmarshal request body in d
 |**Rich**  <br>*optional*|Whether to start container in rich container mode. (default false)|boolean|
 |**RichMode**  <br>*optional*|Choose one rich container mode.(default dumb-init)|enum (dumb-init, sbin-init, systemd)|
 |**Shell**  <br>*optional*|Shell for when `RUN`, `CMD`, and `ENTRYPOINT` uses a shell.|< string > array|
+|**SpecAnnotation**  <br>*optional*|annotations send to runtime spec.|< string, string > map|
 |**StdinOnce**  <br>*optional*|Close `stdin` after one attached client disconnects|boolean|
 |**StopSignal**  <br>*optional*|Signal to stop a container as a string or unsigned integer.  <br>**Default** : `"SIGTERM"`|string|
 |**StopTimeout**  <br>*optional*|Timeout to stop a container in seconds.|integer|
@@ -1509,6 +1581,25 @@ response returned by daemon when container create successfully
 |**Id**  <br>*required*|The ID of the created container|string|
 |**Name**  <br>*optional*|The name of the created container|string|
 |**Warnings**  <br>*required*|Warnings encountered when creating the container|< string > array|
+
+
+<a name="containerexecinspect"></a>
+### ContainerExecInspect
+holds information about a running process started.
+
+
+|Name|Description|Schema|
+|---|---|---|
+|**CanRemove**  <br>*optional*||boolean|
+|**ContainerID**  <br>*optional*|The ID of this container|string|
+|**DetachKeys**  <br>*optional*||string|
+|**ExitCode**  <br>*optional*|The last exit code of this container|integer|
+|**ID**  <br>*optional*|The ID of this exec|string|
+|**OpenStderr**  <br>*optional*||boolean|
+|**OpenStdin**  <br>*optional*||boolean|
+|**OpenStdout**  <br>*optional*||boolean|
+|**ProcessConfig**  <br>*optional*||[ProcessConfig](#processconfig)|
+|**Running**  <br>*optional*||boolean|
 
 
 <a name="containerjson"></a>
@@ -1624,6 +1715,7 @@ It can be used to encode client params in client and unmarshal request body in d
 |**Rich**  <br>*optional*|Whether to start container in rich container mode. (default false)|boolean|
 |**RichMode**  <br>*optional*|Choose one rich container mode.(default dumb-init)|enum (dumb-init, sbin-init, systemd)|
 |**Shell**  <br>*optional*|Shell for when `RUN`, `CMD`, and `ENTRYPOINT` uses a shell.|< string > array|
+|**SpecAnnotation**  <br>*optional*|annotations send to runtime spec.|< string, string > map|
 |**StdinOnce**  <br>*optional*|Close `stdin` after one attached client disconnects|boolean|
 |**StopSignal**  <br>*optional*|Signal to stop a container as a string or unsigned integer.  <br>**Default** : `"SIGTERM"`|string|
 |**StopTimeout**  <br>*optional*|Timeout to stop a container in seconds.|integer|
@@ -1631,6 +1723,15 @@ It can be used to encode client params in client and unmarshal request body in d
 |**User**  <br>*optional*|The user that commands are run as inside the container.|string|
 |**Volumes**  <br>*optional*|An object mapping mount point paths inside the container to empty objects.|< string, object > map|
 |**WorkingDir**  <br>*optional*|The working directory for commands to run in.|string|
+
+
+<a name="daemonupdateconfig"></a>
+### DaemonUpdateConfig
+
+|Name|Description|Schema|
+|---|---|---|
+|**ImageProxy**  <br>*optional*|Image proxy used to pull image.|string|
+|**Labels**  <br>*optional*|Labels indentified the attributes of daemon  <br>**Example** : `[ "storage=ssd", "zone=hangzhou" ]`|< string > array|
 
 
 <a name="devicemapping"></a>
@@ -1689,6 +1790,8 @@ Configuration for a network endpoint.
 
 <a name="execcreateconfig"></a>
 ### ExecCreateConfig
+is a small subset of the Config struct that holds the configuration.
+
 
 |Name|Description|Schema|
 |---|---|---|
@@ -1705,14 +1808,18 @@ Configuration for a network endpoint.
 
 <a name="execcreateresp"></a>
 ### ExecCreateResp
+contains response of Remote API POST "/containers/{name:.*}/exec".
 
-|Name|Schema|
-|---|---|
-|**ID**  <br>*optional*|string|
+
+|Name|Description|Schema|
+|---|---|---|
+|**Id**  <br>*optional*|ID is the exec ID|string|
 
 
 <a name="execstartconfig"></a>
 ### ExecStartConfig
+ExecStartConfig is a temp struct used by execStart.
+
 
 |Name|Description|Schema|
 |---|---|---|
@@ -1756,8 +1863,8 @@ Container configuration that depends on the host we are running on
 |**ContainerIDFile**  <br>*optional*|Path to a file where the container ID is written|string|
 |**CpuCount**  <br>*optional*|The number of usable CPUs (Windows only).<br>On Windows Server containers, the processor resource controls are mutually exclusive. The order of precedence is `CPUCount` first, then `CPUShares`, and `CPUPercent` last.|integer (int64)|
 |**CpuPercent**  <br>*optional*|The usable percentage of the available CPUs (Windows only).<br>On Windows Server containers, the processor resource controls are mutually exclusive. The order of precedence is `CPUCount` first, then `CPUShares`, and `CPUPercent` last.|integer (int64)|
-|**CpuPeriod**  <br>*optional*|CPU CFS (Completely Fair Scheduler) period.<br>The length of a CPU period in microseconds.|integer (int64)|
-|**CpuQuota**  <br>*optional*|CPU CFS (Completely Fair Scheduler) quota.<br>Microseconds of CPU time that the container can get in a CPU period."|integer (int64)|
+|**CpuPeriod**  <br>*optional*|CPU CFS (Completely Fair Scheduler) period.<br>The length of a CPU period in microseconds.  <br>**Minimum value** : `1000`  <br>**Maximum value** : `1000000`|integer (int64)|
+|**CpuQuota**  <br>*optional*|CPU CFS (Completely Fair Scheduler) quota.<br>Microseconds of CPU time that the container can get in a CPU period."  <br>**Minimum value** : `1000`|integer (int64)|
 |**CpuRealtimePeriod**  <br>*optional*|The length of a CPU real-time period in microseconds. Set to 0 to allocate no time allocated to real-time tasks.|integer (int64)|
 |**CpuRealtimeRuntime**  <br>*optional*|The length of a CPU real-time runtime in microseconds. Set to 0 to allocate no time allocated to real-time tasks.|integer (int64)|
 |**CpuShares**  <br>*optional*|An integer value representing this container's relative CPU weight versus other containers.|integer|
@@ -1878,7 +1985,7 @@ An object containing all details of an image at API side
 |**Architecture**  <br>*optional*|the CPU architecture.|string|
 |**Config**  <br>*optional*||[ContainerConfig](#containerconfig)|
 |**CreatedAt**  <br>*optional*|time of image creation.|string|
-|**ID**  <br>*optional*|ID of an image.|string|
+|**Id**  <br>*optional*|ID of an image.|string|
 |**Os**  <br>*optional*|the name of the operating system.|string|
 |**RepoDigests**  <br>*optional*|repository with digest.|< string > array|
 |**RepoTags**  <br>*optional*|repository with tag.|< string > array|
@@ -1915,12 +2022,16 @@ A mount point inside a container
 
 |Name|Schema|
 |---|---|
+|**CopyData**  <br>*optional*|boolean|
 |**Destination**  <br>*optional*|string|
 |**Driver**  <br>*optional*|string|
+|**ID**  <br>*optional*|string|
 |**Mode**  <br>*optional*|string|
 |**Name**  <br>*optional*|string|
+|**Named**  <br>*optional*|boolean|
 |**Propagation**  <br>*optional*|string|
 |**RW**  <br>*optional*|boolean|
+|**Replace**  <br>*optional*|string|
 |**Source**  <br>*optional*|string|
 |**Type**  <br>*optional*|string|
 
@@ -1967,7 +2078,7 @@ contains the response for the remote API: POST /networks/create
 
 |Name|Description|Schema|
 |---|---|---|
-|**ID**  <br>*optional*|ID is the id of the network.|string|
+|**Id**  <br>*optional*|ID is the id of the network.|string|
 |**Warning**  <br>*optional*|Warning means the message of create network result.|string|
 
 
@@ -1979,7 +2090,7 @@ NetworkInfo represents the configuration of a network
 |Name|Description|Schema|
 |---|---|---|
 |**Driver**  <br>*optional*|Driver is the Driver name used to create the network|string|
-|**ID**  <br>*optional*|ID uniquely identifies a network on a single machine|string|
+|**Id**  <br>*optional*|ID uniquely identifies a network on a single machine|string|
 |**Name**  <br>*optional*|Name is the name of the network.|string|
 |**Scope**  <br>*optional*|Scope describes the level at which the network exists|string|
 
@@ -1993,8 +2104,8 @@ is the expected body of the 'GET networks/{id}'' http request message
 |---|---|---|
 |**Driver**  <br>*optional*|Driver means the network's driver.|string|
 |**EnableIPv6**  <br>*optional*|EnableIPv6 represents whether to enable IPv6.|boolean|
-|**ID**  <br>*optional*|ID uniquely identifies a network on a single machine|string|
 |**IPAM**  <br>*optional*|IPAM is the network's IP Address Management.|[IPAM](#ipam)|
+|**Id**  <br>*optional*|ID uniquely identifies a network on a single machine|string|
 |**Internal**  <br>*optional*|Internal checks the network is internal network or not.|boolean|
 |**Labels**  <br>*optional*|Labels holds metadata specific to the network being created.|< string, string > map|
 |**Name**  <br>*optional*|Name is the requested name of the network|string|
@@ -2060,6 +2171,20 @@ entries are added to the mapping table.
 *Type* : < string, < [PortBinding](#portbinding) > array > map
 
 
+<a name="processconfig"></a>
+### ProcessConfig
+ExecProcessConfig holds information about the exec process.
+
+
+|Name|Schema|
+|---|---|
+|**arguments**  <br>*optional*|< string > array|
+|**entrypoint**  <br>*optional*|string|
+|**privileged**  <br>*optional*|boolean|
+|**tty**  <br>*optional*|boolean|
+|**user**  <br>*optional*|string|
+
+
 <a name="registryserviceconfig"></a>
 ### RegistryServiceConfig
 RegistryServiceConfig stores daemon registry services configuration.
@@ -2101,8 +2226,8 @@ A container's resources (cgroups config, ulimits, etc)
 |**CgroupParent**  <br>*optional*|Path to `cgroups` under which the container's `cgroup` is created. If the path is not absolute, the path is considered to be relative to the `cgroups` path of the init process. Cgroups are created if they do not already exist.|string|
 |**CpuCount**  <br>*optional*|The number of usable CPUs (Windows only).<br>On Windows Server containers, the processor resource controls are mutually exclusive. The order of precedence is `CPUCount` first, then `CPUShares`, and `CPUPercent` last.|integer (int64)|
 |**CpuPercent**  <br>*optional*|The usable percentage of the available CPUs (Windows only).<br>On Windows Server containers, the processor resource controls are mutually exclusive. The order of precedence is `CPUCount` first, then `CPUShares`, and `CPUPercent` last.|integer (int64)|
-|**CpuPeriod**  <br>*optional*|CPU CFS (Completely Fair Scheduler) period.<br>The length of a CPU period in microseconds.|integer (int64)|
-|**CpuQuota**  <br>*optional*|CPU CFS (Completely Fair Scheduler) quota.<br>Microseconds of CPU time that the container can get in a CPU period."|integer (int64)|
+|**CpuPeriod**  <br>*optional*|CPU CFS (Completely Fair Scheduler) period.<br>The length of a CPU period in microseconds.  <br>**Minimum value** : `1000`  <br>**Maximum value** : `1000000`|integer (int64)|
+|**CpuQuota**  <br>*optional*|CPU CFS (Completely Fair Scheduler) quota.<br>Microseconds of CPU time that the container can get in a CPU period."  <br>**Minimum value** : `1000`|integer (int64)|
 |**CpuRealtimePeriod**  <br>*optional*|The length of a CPU real-time period in microseconds. Set to 0 to allocate no time allocated to real-time tasks.|integer (int64)|
 |**CpuRealtimeRuntime**  <br>*optional*|The length of a CPU real-time runtime in microseconds. Set to 0 to allocate no time allocated to real-time tasks.|integer (int64)|
 |**CpuShares**  <br>*optional*|An integer value representing this container's relative CPU weight versus other containers.|integer|
@@ -2199,6 +2324,7 @@ The status of the container. For example, "running" or "exited".
 |**ContainersRunning**  <br>*optional*|Number of containers with status `"running"`.  <br>**Example** : `3`|integer|
 |**ContainersStopped**  <br>*optional*|Number of containers with status `"stopped"`.  <br>**Example** : `10`|integer|
 |**Debug**  <br>*optional*|Indicates if the daemon is running in debug-mode / with debug-level logging enabled.  <br>**Example** : `true`|boolean|
+|**DefaultRegistry**  <br>*optional*|default registry can be defined by user.|string|
 |**DefaultRuntime**  <br>*optional*|Name of the default OCI runtime that is used when starting containers.<br>The default can be overridden per-container at create time.  <br>**Default** : `"runc"`  <br>**Example** : `"runc"`|string|
 |**Driver**  <br>*optional*|Name of the storage driver in use.  <br>**Example** : `"overlay2"`|string|
 |**DriverStatus**  <br>*optional*|Information specific to the storage driver, provided as<br>"label" / "value" pairs.<br><br>This information is provided by the storage driver, and formatted<br>in a way consistent with the output of `pouch info` on the command<br>line.<br><br><p><br /></p><br><br>> **Note**: The information returned in this field, including the<br>> formatting of values and labels, should not be considered stable,<br>> and may change without notice.  <br>**Example** : `[ [ "Backing Filesystem", "extfs" ], [ "Supports d_type", "true" ], [ "Native Overlay Diff", "true" ] ]`|< < string > array > array|
@@ -2268,8 +2394,8 @@ UpdateConfig holds the mutable attributes of a Container. Those attributes can b
 |**CgroupParent**  <br>*optional*|Path to `cgroups` under which the container's `cgroup` is created. If the path is not absolute, the path is considered to be relative to the `cgroups` path of the init process. Cgroups are created if they do not already exist.|string|
 |**CpuCount**  <br>*optional*|The number of usable CPUs (Windows only).<br>On Windows Server containers, the processor resource controls are mutually exclusive. The order of precedence is `CPUCount` first, then `CPUShares`, and `CPUPercent` last.|integer (int64)|
 |**CpuPercent**  <br>*optional*|The usable percentage of the available CPUs (Windows only).<br>On Windows Server containers, the processor resource controls are mutually exclusive. The order of precedence is `CPUCount` first, then `CPUShares`, and `CPUPercent` last.|integer (int64)|
-|**CpuPeriod**  <br>*optional*|CPU CFS (Completely Fair Scheduler) period.<br>The length of a CPU period in microseconds.|integer (int64)|
-|**CpuQuota**  <br>*optional*|CPU CFS (Completely Fair Scheduler) quota.<br>Microseconds of CPU time that the container can get in a CPU period."|integer (int64)|
+|**CpuPeriod**  <br>*optional*|CPU CFS (Completely Fair Scheduler) period.<br>The length of a CPU period in microseconds.  <br>**Minimum value** : `1000`  <br>**Maximum value** : `1000000`|integer (int64)|
+|**CpuQuota**  <br>*optional*|CPU CFS (Completely Fair Scheduler) quota.<br>Microseconds of CPU time that the container can get in a CPU period."  <br>**Minimum value** : `1000`|integer (int64)|
 |**CpuRealtimePeriod**  <br>*optional*|The length of a CPU real-time period in microseconds. Set to 0 to allocate no time allocated to real-time tasks.|integer (int64)|
 |**CpuRealtimeRuntime**  <br>*optional*|The length of a CPU real-time runtime in microseconds. Set to 0 to allocate no time allocated to real-time tasks.|integer (int64)|
 |**CpuShares**  <br>*optional*|An integer value representing this container's relative CPU weight versus other containers.|integer|

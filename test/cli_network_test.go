@@ -24,7 +24,7 @@ func init() {
 // SetUpSuite does common setup in the beginning of each test suite.
 func (suite *PouchNetworkSuite) SetUpSuite(c *check.C) {
 	SkipIfFalse(c, environment.IsLinux)
-	command.PouchRun("pull", busyboxImage).Assert(c, icmd.Success)
+	PullImage(c, busyboxImage)
 
 	// Remove all Containers, in case there are legacy containers connecting network.
 	environment.PruneAllContainers(apiClient)
@@ -33,13 +33,24 @@ func (suite *PouchNetworkSuite) SetUpSuite(c *check.C) {
 // TestNetworkInspectFormat tests the inspect format of network works.
 func (suite *PouchNetworkSuite) TestNetworkInspectFormat(c *check.C) {
 	output := command.PouchRun("network", "inspect", "bridge").Stdout()
-	result := &types.ContainerJSON{}
-	if err := json.Unmarshal([]byte(output), result); err != nil {
+	result := []types.NetworkInspectResp{}
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
 		c.Errorf("failed to decode inspect output: %v", err)
 	}
 
 	// inspect network name
 	output = command.PouchRun("network", "inspect", "-f", "{{.Name}}", "bridge").Stdout()
+	c.Assert(output, check.Equals, "bridge\n")
+
+	output = command.PouchRun("network", "inspect", "bridge").Stdout()
+	network := []types.NetworkInspectResp{}
+	if err := json.Unmarshal([]byte(output), &network); err != nil {
+		c.Errorf("failed to decode inspect output: %v", err)
+	}
+	networkID := network[0].ID
+
+	// inspect network name by ID
+	output = command.PouchRun("network", "inspect", "-f", "{{.Name}}", networkID).Stdout()
 	c.Assert(output, check.Equals, "bridge\n")
 }
 
@@ -52,7 +63,7 @@ func (suite *PouchNetworkSuite) TestNetworkDefault(c *check.C) {
 		funcname = tmpname[i]
 	}
 
-	// After pouchd is launched, default netowrk bridge is created
+	// After pouchd is launched, default network bridge is created
 	// check the existence of default network: bridge
 	command.PouchRun("network", "inspect", "bridge").Assert(c, icmd.Success)
 
@@ -128,7 +139,7 @@ func (suite *PouchNetworkSuite) TestNetworkBridgeWorks(c *check.C) {
 			ExitCode: 1,
 			Err:      "has active endpoints",
 		}
-		command.PouchRun("run", "--name", funcname, "--net", funcname, busyboxImage, "top").Assert(c, icmd.Success)
+		command.PouchRun("run", "-d", "--name", funcname, "--net", funcname, busyboxImage, "top").Assert(c, icmd.Success)
 
 		err := command.PouchRun("network", "remove", funcname).Compare(expct)
 		c.Assert(err, check.IsNil)
@@ -170,7 +181,7 @@ func (suite *PouchNetworkSuite) TestNetworkBridgeWorks(c *check.C) {
 	}
 	{
 		// running container is stopped, then the veth device should also been removed
-		command.PouchRun("run", "--name", funcname, "--net", funcname, busyboxImage, "top").Assert(c, icmd.Success)
+		command.PouchRun("run", "-d", "--name", funcname, "--net", funcname, busyboxImage, "top").Assert(c, icmd.Success)
 		command.PouchRun("stop", funcname).Assert(c, icmd.Success)
 
 		// get the ID of bridge to construct the bridge name.
@@ -301,7 +312,6 @@ func (suite *PouchNetworkSuite) TestNetworkCreateDup(c *check.C) {
 }
 
 func (suite *PouchNetworkSuite) TestNetworkPortMapping(c *check.C) {
-	c.Skip("Skip this test due to httpd image can't be pulled")
 	pc, _, _, _ := runtime.Caller(0)
 	tmpname := strings.Split(runtime.FuncForPC(pc).Name(), ".")
 	var funcname string
@@ -319,7 +329,7 @@ func (suite *PouchNetworkSuite) TestNetworkPortMapping(c *check.C) {
 		Out:      "It works",
 	}
 
-	image := "registry.hub.docker.com/library/httpd"
+	image := "registry.hub.docker.com/library/httpd:2"
 
 	command.PouchRun("pull", image).Assert(c, icmd.Success)
 	command.PouchRun("run", "-d",
@@ -327,7 +337,7 @@ func (suite *PouchNetworkSuite) TestNetworkPortMapping(c *check.C) {
 		"-p", "9999:80",
 		image).Assert(c, icmd.Success)
 
-	time.Sleep(1 * time.Second)
+	time.Sleep(10 * time.Second)
 	err := icmd.RunCommand("curl", "localhost:9999").Compare(expct)
 	c.Assert(err, check.IsNil)
 

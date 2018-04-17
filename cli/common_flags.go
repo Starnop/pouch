@@ -20,6 +20,8 @@ func addCommonFlags(flagSet *pflag.FlagSet) *container {
 	flagSet.Int64Var(&c.cpushare, "cpu-share", 0, "CPU shares (relative weight)")
 	flagSet.StringVar(&c.cpusetcpus, "cpuset-cpus", "", "CPUs in which to allow execution (0-3, 0,1)")
 	flagSet.StringVar(&c.cpusetmems, "cpuset-mems", "", "MEMs in which to allow execution (0-3, 0,1)")
+	flagSet.Int64Var(&c.cpuperiod, "cpu-period", 0, "Limit CPU CFS (Completely Fair Scheduler) period, range is in [1000(1ms),1000000(1s)]")
+	flagSet.Int64Var(&c.cpuquota, "cpu-quota", 0, "Limit CPU CFS (Completely Fair Scheduler) quota, range is in [1000,∞)")
 
 	// device related options
 	flagSet.StringSliceVarP(&c.devices, "device", "", nil, "Add a host device to the container")
@@ -77,7 +79,7 @@ func addCommonFlags(flagSet *pflag.FlagSet) *container {
 
 	flagSet.StringVar(&c.utsMode, "uts", "", "UTS namespace to use")
 
-	flagSet.StringSliceVarP(&c.volume, "volume", "v", nil, "Bind mount volumes to container")
+	flagSet.StringSliceVarP(&c.volume, "volume", "v", nil, "Bind mount volumes to container, format is: [source:]<destination>[:mode], [source] can be volume or host's path, <destination> is container's path, [mode] can be \"ro/rw/dr/rr/z/Z/nocopy/private/rprivate/slave/rslave/shared/rshared\"")
 
 	flagSet.StringVarP(&c.workdir, "workdir", "w", "", "Set the working directory in a container")
 
@@ -90,6 +92,10 @@ func addCommonFlags(flagSet *pflag.FlagSet) *container {
 
 	// disk quota
 	flagSet.StringSliceVar(&c.diskQuota, "disk-quota", nil, "Set disk quota for container")
+	flagSet.StringVar(&c.quotaID, "quota-id", "", "Specified quota id, if id < 0, it means pouchd alloc a unique quota id")
+
+	// additional runtime spec annotations
+	flagSet.StringSliceVar(&c.specAnnotation, "annotation", nil, "Additional annotation for runtime")
 
 	return c
 }

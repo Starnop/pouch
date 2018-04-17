@@ -83,6 +83,29 @@ paths:
           description: "Authentication to check"
           schema:
             $ref: "#/definitions/AuthConfig"
+  
+  /daemon/update:
+    post:
+      summary: "Update daemon's labels and image proxy"
+      consumes:
+        - "application/json"
+      produces:
+        - "application/json"
+      responses:
+        200:
+          description: "no error"
+        400:
+          description: "bad parameter"
+          schema:
+            $ref: '#/definitions/Error'
+        500:
+          $ref: "#/responses/500ErrorResponse"
+      parameters:
+        - name: "DaemonUpdateConfig"
+          in: body
+          description: "Config used to update daemon, only labels and image proxy are allowed."
+          schema:
+            $ref: "#/definitions/DaemonUpdateConfig"
 
   /images/create:
     post:
@@ -666,6 +689,34 @@ paths:
           type: "string"
       tags: ["Exec"]
 
+  /exec/{id}/json:
+    get:
+      summary: "Inspect an exec instance"
+      description: "Return low-level information about an exec instance."
+      operationId: "ExecInspect"
+      produces:
+        - "application/json"
+      responses:
+        200:
+          description: "No error"
+          schema:
+            $ref: "#/definitions/ContainerExecInspect"
+        404:
+          description: "No such exec instance"
+          schema:
+            $ref: "#/responses/404ErrorResponse"
+        500:
+          description: "Server error"
+          schema:
+            $ref: "#/responses/500ErrorResponse"
+      parameters:
+        - name: "id"
+          in: "path"
+          description: "Exec instance ID"
+          required: true
+          type: "string"
+      tags: ["Exec"]
+
   /containers/{id}/attach:
     post:
       summary: "Attach to a container"
@@ -1215,6 +1266,10 @@ definitions:
           Address / URL of the index server that is used for image search,
           and as a default for user authentication.
         type: "string"
+      DefaultRegistry:
+        description: |
+          default registry can be defined by user.
+        type: "string"
       RegistryConfig:
         $ref: "#/definitions/RegistryServiceConfig"
       HttpProxy:
@@ -1324,6 +1379,19 @@ definitions:
           type: "string"
         example:
           - ["unix:///var/run/pouchd.sock", "tcp://0.0.0.0:4243"]
+
+  DaemonUpdateConfig:
+    type: "object"
+    properties:
+      Labels:
+        description: "Labels indentified the attributes of daemon"
+        type: "array"
+        items:
+          type: "string"
+        example: ["storage=ssd", "zone=hangzhou"]
+      ImageProxy:
+        description: "Image proxy used to pull image."
+        type: "string"
 
   RegistryServiceConfig:
     description: |
@@ -1711,6 +1779,14 @@ definitions:
         x-nullable: true
         additionalProperties:
           type: "string"
+      SpecAnnotation:
+        description: "annotations send to runtime spec."
+        type: "object"
+        additionalProperties:
+          type: "string"
+      QuotaID:
+        type: "string"
+        description: "set disk quota by specified quota id, if id < 0, it means pouchd alloc a unique quota id"
  
   ContainerCreateResp:
     description: "response returned by daemon when container create successfully"
@@ -2038,12 +2114,15 @@ definitions:
           The length of a CPU period in microseconds.
         type: "integer"
         format: "int64"
+        minimum: 1000
+        maximum: 1000000
       CpuQuota:
         description: |
           CPU CFS (Completely Fair Scheduler) quota.
           Microseconds of CPU time that the container can get in a CPU period."
         type: "integer"
         format: "int64"
+        minimum: 1000
       CpuRealtimePeriod:
         description: "The length of a CPU real-time period in microseconds. Set to 0 to allocate no time allocated to real-time tasks."
         type: "integer"
@@ -2230,7 +2309,8 @@ definitions:
       GET "/containers/json"
     type: "object"
     properties:
-      ID:
+      Id:
+        description: "Container ID"
         type: "string"
       Names:
         type: "array"
@@ -2397,7 +2477,7 @@ definitions:
     description: "An object containing all details of an image at API side"
     type: "object"
     properties:
-      ID:
+      Id:
         description: "ID of an image."
         type: "string"
         x-nullable: false
@@ -2552,6 +2632,7 @@ definitions:
 
   ExecCreateConfig:
     type: "object"
+    description: is a small subset of the Config struct that holds the configuration.
     properties:
       User:
         type: "string"
@@ -2603,12 +2684,15 @@ definitions:
 
   ExecCreateResp:
     type: "object"
+    description: contains response of Remote API POST "/containers/{name:.*}/exec".
     properties:
-      ID:
+      Id:
         type: "string"
+        description: ID is the exec ID
 
   ExecStartConfig:
     type: "object"
+    description: ExecStartConfig is a temp struct used by execStart.
     properties:
       Detach:
         description: ExecStart will first check if it's detached
@@ -2620,6 +2704,51 @@ definitions:
       Detach: false
       Tty: false
   
+  ContainerExecInspect:
+    type: "object"
+    description: holds information about a running process started.
+    properties:
+      ID:
+        type: "string"
+        description: "The ID of this exec"
+      Running:
+        type: "boolean"
+      ExitCode:
+        type: "integer"
+        description: "The last exit code of this container"
+      ProcessConfig:
+        $ref: "#/definitions/ProcessConfig"
+      OpenStdin:
+        type: "boolean"
+      OpenStderr:
+        type: "boolean"
+      OpenStdout:
+        type: "boolean"
+      CanRemove:
+        type: "boolean"
+      ContainerID:
+        type: "string"
+        description: "The ID of this container"
+      DetachKeys:
+        type: "string"
+
+  ProcessConfig:
+    type: "object"
+    description: ExecProcessConfig holds information about the exec process.
+    properties:
+      privileged:
+        type: "boolean"
+      user:
+        type: "string"
+      tty:
+        type: "boolean"
+      entrypoint:
+        type: "string"
+      arguments:
+        type: "array"
+        items:
+          type: "string"
+
   ContainerJSON:
     description: | 
       ContainerJSON contains response of Engine API:
@@ -2682,6 +2811,8 @@ definitions:
         x-nullable: true
       Config:
         $ref: "#/definitions/ContainerConfig"
+      Snapshotter:
+        $ref: "#/definitions/SnapshotterData"
       GraphDriver:
         $ref: "#/definitions/GraphDriverData"
       Mounts:
@@ -2776,6 +2907,20 @@ definitions:
     type: "string"
     enum: ["created", "running", "stopped", "paused", "restarting", "removing", "exited", "dead"]
 
+  SnapshotterData:
+    description: "Information about a container's snapshotter."
+    type: "object"
+    required: [Name, Data]
+    properties:
+      Name:
+        type: "string"
+        x-nullable: false
+      Data:
+        type: "object"
+        x-nullable: false
+        additionalProperties:
+          type: "string"
+
   GraphDriverData:
     description: "Information about a container's graph driver."
     type: "object"
@@ -2797,6 +2942,8 @@ definitions:
     properties:
       Type:
         type: "string"
+      ID:
+        type: "string"
       Name:
         type: "string"
       Source:
@@ -2809,6 +2956,12 @@ definitions:
         type: "string"
       RW:
         type: "boolean"
+      CopyData:
+        type: "boolean"
+      Named:
+        type: "boolean"
+      Replace:
+        type: "string"
       Propagation:
         type: "string"
 
@@ -2940,7 +3093,7 @@ definitions:
     type: "object"
     description: "contains the response for the remote API: POST /networks/create"
     properties:
-      ID:
+      Id:
         description: "ID is the id of the network."
         type: "string"
       Warning:
@@ -2981,7 +3134,7 @@ definitions:
       Name:
         type: "string"
         description: "Name is the requested name of the network"
-      ID:
+      Id:
         type: "string"
         description: "ID uniquely identifies a network on a single machine"
       Scope:
@@ -3018,7 +3171,7 @@ definitions:
         Name:
           description: "Name is the name of the network."
           type: "string"
-        ID:
+        Id:
           type: "string"
           description: "ID uniquely identifies a network on a single machine"
         Driver:

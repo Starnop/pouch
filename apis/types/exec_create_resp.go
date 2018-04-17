@@ -12,16 +12,16 @@ import (
 	"github.com/go-openapi/swag"
 )
 
-// ExecCreateResp exec create resp
+// ExecCreateResp contains response of Remote API POST "/containers/{name:.*}/exec".
 // swagger:model ExecCreateResp
 
 type ExecCreateResp struct {
 
-	// ID
-	ID string `json:"ID,omitempty"`
+	// ID is the exec ID
+	ID string `json:"Id,omitempty"`
 }
 
-/* polymorph ExecCreateResp ID false */
+/* polymorph ExecCreateResp Id false */
 
 // Validate validates this exec create resp
 func (m *ExecCreateResp) Validate(formats strfmt.Registry) error {

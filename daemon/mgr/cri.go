@@ -11,7 +11,6 @@ import (
 
 	apitypes "github.com/alibaba/pouch/apis/types"
 	"github.com/alibaba/pouch/cri/stream"
-	"github.com/alibaba/pouch/ctrd"
 	"github.com/alibaba/pouch/daemon/config"
 	"github.com/alibaba/pouch/pkg/collect"
 	"github.com/alibaba/pouch/pkg/reference"
@@ -424,8 +423,8 @@ func (c *CriManager) CreateContainer(ctx context.Context, r *runtime.CreateConta
 	}
 	createConfig := &apitypes.ContainerCreateConfig{
 		ContainerConfig: apitypes.ContainerConfig{
-			// TODO: maybe we should ditinguish cmd and entrypoint more clearly.
-			Cmd:        config.Command,
+			Entrypoint: config.Command,
+			Cmd:        config.Args,
 			Env:        generateEnvList(config.GetEnvs()),
 			Image:      image,
 			WorkingDir: config.WorkingDir,
@@ -688,29 +687,28 @@ func (c *CriManager) ExecSync(ctx context.Context, r *runtime.ExecSyncRequest) (
 		return nil, fmt.Errorf("failed to start exec for container %q: %v", id, err)
 	}
 
-	execInspect, err := c.ContainerMgr.InspectExec(ctx, execid)
-	if err != nil {
-		return nil, fmt.Errorf("failed to inspect exec for container %q: %v", id, err)
-	}
-
-	var result *ctrd.Message
-	ticker := time.NewTicker(10 * time.Second)
-	defer ticker.Stop()
-	select {
-	case <-ticker.C:
-		return nil, fmt.Errorf("timeout to get exec result for container %q", id)
-	case result = <-execInspect.ExitCh:
+	var execConfig *ContainerExecConfig
+	for {
+		execConfig, err = c.ContainerMgr.GetExecConfig(ctx, execid)
+		if err != nil {
+			return nil, fmt.Errorf("failed to inspect exec for container %q: %v", id, err)
+		}
+		// Loop until exec finished.
+		if !execConfig.Running {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
 
 	var stderr []byte
-	if result.RawError() != nil {
-		stderr = []byte(result.RawError().Error())
+	if execConfig.Error != nil {
+		stderr = []byte(execConfig.Error.Error())
 	}
 
 	return &runtime.ExecSyncResponse{
 		Stdout:   output.Bytes(),
 		Stderr:   stderr,
-		ExitCode: int32(result.ExitCode()),
+		ExitCode: int32(execConfig.ExitCode),
 	}, nil
 }
 
@@ -763,14 +761,27 @@ func (c *CriManager) ListImages(ctx context.Context, r *runtime.ListImagesReques
 		return nil, err
 	}
 
+	// We may get images with same id and different repoTag or repoDigest,
+	// so we need idExist to de-dup.
+	idExist := make(map[string]bool)
+
 	images := make([]*runtime.Image, 0, len(imageList))
 	for _, i := range imageList {
-		image, err := imageToCriImage(&i)
+		if _, ok := idExist[i.ID]; ok {
+			continue
+		}
+		// NOTE: we should query image cache to get the correct image info.
+		imageInfo, err := c.ImageMgr.GetImage(ctx, strings.TrimPrefix(i.ID, "sha256:"))
+		if err != nil {
+			continue
+		}
+		image, err := imageToCriImage(imageInfo)
 		if err != nil {
 			// TODO: log an error message?
 			continue
 		}
 		images = append(images, image)
+		idExist[i.ID] = true
 	}
 
 	return &runtime.ListImagesResponse{Images: images}, nil
@@ -786,8 +797,8 @@ func (c *CriManager) ImageStatus(ctx context.Context, r *runtime.ImageStatusRequ
 
 	imageInfo, err := c.ImageMgr.GetImage(ctx, strings.TrimPrefix(ref.String(), "sha256:"))
 	if err != nil {
-		// TODO: seperate ErrImageNotFound with others.
-		// Now we just return empty if the error occured.
+		// TODO: separate ErrImageNotFound with others.
+		// Now we just return empty if the error occurred.
 		return &runtime.ImageStatusResponse{}, nil
 	}
 
@@ -804,18 +815,34 @@ func (c *CriManager) PullImage(ctx context.Context, r *runtime.PullImageRequest)
 	// TODO: authentication.
 	imageRef := r.GetImage().GetImage()
 
-	namedRef, err := reference.ParseNamedReference(imageRef)
-	if err != nil {
-		return nil, err
-	}
-	taggedRef := reference.WithDefaultTagIfMissing(namedRef).(reference.Tagged)
-
-	err = c.ImageMgr.PullImage(ctx, taggedRef.Name(), taggedRef.Tag(), nil, bytes.NewBuffer([]byte{}))
+	refNamed, err := reference.ParseNamedReference(imageRef)
 	if err != nil {
 		return nil, err
 	}
 
-	imageInfo, err := c.ImageMgr.GetImage(ctx, taggedRef.String())
+	_, ok := refNamed.(reference.Digested)
+	if !ok {
+		// If the imageRef is not a digest.
+		refTagged := reference.WithDefaultTagIfMissing(refNamed).(reference.Tagged)
+		imageRef = refTagged.String()
+	}
+
+	authConfig := &apitypes.AuthConfig{}
+	if r.Auth != nil {
+		authConfig.Auth = r.Auth.Auth
+		authConfig.Username = r.Auth.Username
+		authConfig.Password = r.Auth.Password
+		authConfig.ServerAddress = r.Auth.ServerAddress
+		authConfig.IdentityToken = r.Auth.IdentityToken
+		authConfig.RegistryToken = r.Auth.RegistryToken
+	}
+
+	err = c.ImageMgr.PullImage(ctx, imageRef, authConfig, bytes.NewBuffer([]byte{}))
+	if err != nil {
+		return nil, err
+	}
+
+	imageInfo, err := c.ImageMgr.GetImage(ctx, imageRef)
 	if err != nil {
 		return nil, err
 	}
@@ -826,19 +853,15 @@ func (c *CriManager) PullImage(ctx context.Context, r *runtime.PullImageRequest)
 // RemoveImage removes the image.
 func (c *CriManager) RemoveImage(ctx context.Context, r *runtime.RemoveImageRequest) (*runtime.RemoveImageResponse, error) {
 	imageRef := r.GetImage().GetImage()
-	ref, err := reference.Parse(imageRef)
-	if err != nil {
-		return nil, err
-	}
 
-	imageInfo, err := c.ImageMgr.GetImage(ctx, strings.TrimPrefix(ref.String(), "sha256:"))
+	imageInfo, err := c.ImageMgr.GetImage(ctx, strings.TrimPrefix(imageRef, "sha256:"))
 	if err != nil {
-		// TODO: seperate ErrImageNotFound with others.
-		// Now we just return empty if the error occured.
+		// TODO: separate ErrImageNotFound with others.
+		// Now we just return empty if the error occurred.
 		return &runtime.RemoveImageResponse{}, nil
 	}
 
-	err = c.ImageMgr.RemoveImage(ctx, imageInfo, strings.TrimPrefix(ref.String(), "sha256:"), &ImageRemoveOption{})
+	err = c.ImageMgr.RemoveImage(ctx, imageInfo, strings.TrimPrefix(imageRef, "sha256:"), &ImageRemoveOption{})
 	if err != nil {
 		return nil, err
 	}

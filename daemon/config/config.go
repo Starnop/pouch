@@ -1,6 +1,11 @@
 package config
 
 import (
+	"fmt"
+	"strings"
+	"sync"
+
+	"github.com/alibaba/pouch/client"
 	"github.com/alibaba/pouch/cri"
 	"github.com/alibaba/pouch/network"
 	"github.com/alibaba/pouch/pkg/utils"
@@ -9,11 +14,16 @@ import (
 
 // Config refers to daemon's whole configurations.
 type Config struct {
+	sync.Mutex
+
 	//Volume config
 	VolumeConfig volume.Config
 
 	// Network config
 	NetworkConfg network.Config
+
+	// Whether enable cri manager.
+	IsCriEnabled bool `json:"enable-cri,omitempty"`
 
 	// CRI config.
 	CriConfig cri.Config
@@ -31,10 +41,10 @@ type Config struct {
 	ContainerdAddr string `json:"containerd,omitempty"`
 
 	// DefaultRegistry is daemon's default registry which is to pull/push/search images.
-	DefaultRegistry string
+	DefaultRegistry string `json:"default-registry,omitempty"`
 
 	// DefaultRegistryNS is daemon's default registry namespace used in pull/push/search images.
-	DefaultRegistryNS string
+	DefaultRegistryNS string `json:"default-registry-namespace,omitempty"`
 
 	// Home directory.
 	HomeDir string `json:"home-dir,omitempty"`
@@ -44,7 +54,7 @@ type Config struct {
 	ContainerdPath string `json:"containerd-path"`
 
 	// TLS configuration
-	TLS utils.TLSConfig
+	TLS client.TLSConfig
 
 	// Default OCI Runtime
 	DefaultRuntime string `json:"default-runtime,omitempty"`
@@ -56,13 +66,13 @@ type Config struct {
 	LxcfsBinPath string `json:"lxcfs,omitempty"`
 
 	// LxcfsHome is the absolute path of lxcfs
-	LxcfsHome string
+	LxcfsHome string `json:"lxcfs-home,omitempty"`
 
-	// ImageProxy is a http proxy to pull image
+	// ImagxeProxy is a http proxy to pull image
 	ImageProxy string `json:"image-proxy,omitempty"`
 
 	// QuotaDriver is used to set the driver of Quota
-	QuotaDriver string
+	QuotaDriver string `json:"quota-driver,omitempty"`
 
 	// Configuration file of pouchd
 	ConfigFile string `json:"config-file,omitempty"`
@@ -72,4 +82,31 @@ type Config struct {
 
 	// PluginPath is set the path where plugin so file put
 	PluginPath string `json:"plugin"`
+
+	// Labels is the metadata of daemon
+	Labels []string `json:"labels,omitempty"`
+
+	// EnableProfiler indicates whether pouchd setup profiler like pprof and stack dumping etc
+	EnableProfiler bool `json:"enableProfiler"`
+}
+
+// Validate validates the user input config.
+func (cfg *Config) Validate() error {
+	// deduplicated elements in slice if there is any.
+	cfg.Listen = utils.DeDuplicate(cfg.Listen)
+	cfg.Labels = utils.DeDuplicate(cfg.Labels)
+
+	for _, label := range cfg.Labels {
+		data := strings.SplitN(label, "=", 2)
+		if len(data) != 2 {
+			return fmt.Errorf("daemon label %s must be in format of key=value", label)
+		}
+		if len(data[0]) == 0 || len(data[1]) == 0 {
+			return fmt.Errorf("key and value in daemon label %s cannot be empty", label)
+		}
+	}
+
+	// TODO: add config validation
+
+	return nil
 }

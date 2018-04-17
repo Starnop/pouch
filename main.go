@@ -15,6 +15,7 @@ import (
 	"github.com/alibaba/pouch/daemon"
 	"github.com/alibaba/pouch/daemon/config"
 	"github.com/alibaba/pouch/lxcfs"
+	"github.com/alibaba/pouch/pkg/debug"
 	"github.com/alibaba/pouch/pkg/exec"
 	"github.com/alibaba/pouch/pkg/quota"
 	"github.com/alibaba/pouch/pkg/utils"
@@ -28,10 +29,11 @@ import (
 )
 
 var (
-	cfg          config.Config
 	sigHandles   []func() error
 	printVersion bool
 )
+
+var cfg = &config.Config{}
 
 func main() {
 	if reexec.Init() {
@@ -49,7 +51,7 @@ func main() {
 
 	setupFlags(cmdServe)
 	parseFlags(cmdServe, os.Args[1:])
-	if err := loadDaemonFile(&cfg, cmdServe.Flags()); err != nil {
+	if err := loadDaemonFile(cfg, cmdServe.Flags()); err != nil {
 		logrus.Errorf("failed to load daemon file: %s", err)
 		os.Exit(1)
 	}
@@ -72,6 +74,7 @@ func setupFlags(cmd *cobra.Command) {
 
 	flagSet.StringVar(&cfg.HomeDir, "home-dir", "/var/lib/pouch", "Specify root dir of pouchd")
 	flagSet.StringArrayVarP(&cfg.Listen, "listen", "l", []string{"unix:///var/run/pouchd.sock"}, "Specify listening addresses of Pouchd")
+	flagSet.BoolVar(&cfg.IsCriEnabled, "enable-cri", false, "Specify whether enable the cri part of pouchd which is used to support Kubernetes")
 	flagSet.StringVar(&cfg.CriConfig.Listen, "listen-cri", "/var/run/pouchcri.sock", "Specify listening address of CRI")
 	flagSet.StringVar(&cfg.CriConfig.NetworkPluginBinDir, "cni-bin-dir", "/opt/cni/bin", "The directory for putting cni plugin binaries.")
 	flagSet.StringVar(&cfg.CriConfig.NetworkPluginConfDir, "cni-conf-dir", "/etc/cni/net.d", "The directory for putting cni plugin configuration files.")
@@ -82,11 +85,12 @@ func setupFlags(cmd *cobra.Command) {
 	flagSet.StringVar(&cfg.TLS.Cert, "tlscert", "", "Specify cert file of TLS")
 	flagSet.StringVar(&cfg.TLS.CA, "tlscacert", "", "Specify CA file of TLS")
 	flagSet.BoolVar(&cfg.TLS.VerifyRemote, "tlsverify", false, "Use TLS and verify remote")
+	flagSet.StringVar(&cfg.TLS.ManagerWhiteList, "manager-whitelist", "", "Set tls name whitelist, multiple values are separated by commas")
 	flagSet.BoolVarP(&printVersion, "version", "v", false, "Print daemon version")
 	flagSet.StringVar(&cfg.DefaultRuntime, "default-runtime", "runc", "Default OCI Runtime")
 	flagSet.BoolVar(&cfg.IsLxcfsEnabled, "enable-lxcfs", false, "Enable Lxcfs to make container to isolate /proc")
 	flagSet.StringVar(&cfg.LxcfsBinPath, "lxcfs", "/usr/local/bin/lxcfs", "Specify the path of lxcfs binary")
-	flagSet.StringVar(&cfg.LxcfsHome, "lxcfs-home", "/var/lib/lxc/lxcfs", "Specify the mount dir of lxcfs")
+	flagSet.StringVar(&cfg.LxcfsHome, "lxcfs-home", "/var/lib/lxcfs", "Specify the mount dir of lxcfs")
 	flagSet.StringVar(&cfg.DefaultRegistry, "default-registry", "registry.hub.docker.com", "Default Image Registry")
 	flagSet.StringVar(&cfg.DefaultRegistryNS, "default-registry-namespace", "library", "Default Image Registry namespace")
 	flagSet.StringVar(&cfg.ImageProxy, "image-proxy", "", "Http proxy to pull image")
@@ -96,6 +100,8 @@ func setupFlags(cmd *cobra.Command) {
 	// cgroup-path flag is to set parent cgroup for all containers, default is "default" staying with containerd's configuration.
 	flagSet.StringVar(&cfg.CgroupParent, "cgroup-parent", "default", "Set parent cgroup for all containers")
 	flagSet.StringVar(&cfg.PluginPath, "plugin", "", "Set the path where plugin shared library file put")
+	flagSet.StringSliceVar(&cfg.Labels, "label", []string{}, "Set metadata for Pouch daemon")
+	flagSet.BoolVar(&cfg.EnableProfiler, "enable-profiler", false, "Set if pouchd setup profiler")
 }
 
 // parse flags
@@ -120,11 +126,16 @@ func runDaemon() error {
 	// initialize log.
 	initLog()
 
+	if err := cfg.Validate(); err != nil {
+		logrus.Fatal(err)
+	}
+
 	// import debugger tools for pouch when in debug mode.
-	if cfg.Debug {
+	if cfg.Debug || cfg.EnableProfiler {
 		if err := agent.Listen(agent.Options{}); err != nil {
 			logrus.Fatal(err)
 		}
+		debug.SetupDumpStackTrap()
 	}
 
 	// initialize home dir.
@@ -173,7 +184,6 @@ func runDaemon() error {
 	if err := checkLxcfsCfg(); err != nil {
 		return err
 	}
-	processes = setLxcfsProcess(processes)
 	defer processes.StopAll()
 
 	if err := processes.RunAll(); err != nil {
@@ -235,11 +245,6 @@ func setLxcfsProcess(processes exec.Processes) exec.Processes {
 		},
 	}
 	processes = append(processes, p)
-	cfg.LxcfsHome = strings.TrimSuffix(cfg.LxcfsHome, "/")
-
-	lxcfs.IsLxcfsEnabled = cfg.IsLxcfsEnabled
-	lxcfs.LxcfsHomeDir = cfg.LxcfsHome
-	lxcfs.LxcfsParentDir = path.Dir(cfg.LxcfsHome)
 
 	return processes
 }
@@ -254,18 +259,12 @@ func checkLxcfsCfg() error {
 		return fmt.Errorf("invalid lxcfs home dir: %s", cfg.LxcfsHome)
 	}
 
-	if _, err := os.Stat(cfg.LxcfsBinPath); err != nil {
-		return fmt.Errorf("invalid lxcfs bin path: %s", cfg.LxcfsBinPath)
-	}
+	cfg.LxcfsHome = strings.TrimSuffix(cfg.LxcfsHome, "/")
+	lxcfs.IsLxcfsEnabled = cfg.IsLxcfsEnabled
+	lxcfs.LxcfsHomeDir = cfg.LxcfsHome
+	lxcfs.LxcfsParentDir = path.Dir(cfg.LxcfsHome)
 
-	if _, err := os.Stat(cfg.LxcfsHome); err != nil {
-		if os.IsNotExist(err) {
-			if err := os.MkdirAll(cfg.LxcfsHome, 0755); err != nil {
-				return fmt.Errorf("failed to LxcfsHome %s: %v", cfg.LxcfsHome, err)
-			}
-		}
-	}
-	return nil
+	return lxcfs.CheckLxcfsMount()
 }
 
 // load daemon config file
@@ -316,7 +315,16 @@ func loadDaemonFile(cfg *config.Config, flagSet *pflag.FlagSet) error {
 func getUnknownFlags(flagSet *pflag.FlagSet, fileFlags map[string]interface{}) error {
 	var unknownFlags []string
 
-	for k := range fileFlags {
+	for k, v := range fileFlags {
+		if m, ok := v.(map[string]interface{}); ok {
+			for k = range m {
+				f := flagSet.Lookup(k)
+				if f == nil {
+					unknownFlags = append(unknownFlags, k)
+				}
+			}
+			continue
+		}
 		f := flagSet.Lookup(k)
 		if f == nil {
 			unknownFlags = append(unknownFlags, k)
@@ -335,7 +343,7 @@ func getConflictConfigurations(flagSet *pflag.FlagSet, fileFlags map[string]inte
 	var conflictFlags []string
 	flagSet.Visit(func(f *pflag.Flag) {
 		if v, exist := fileFlags[f.Name]; exist {
-			conflictFlags = append(conflictFlags, fmt.Sprintf("from flag: %s and from config file: %s", f.Value.String(), v.(string)))
+			conflictFlags = append(conflictFlags, fmt.Sprintf("from flag: %s and from config file: %s", f.Value.String(), v))
 		}
 	})
 

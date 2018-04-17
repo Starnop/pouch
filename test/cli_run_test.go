@@ -12,6 +12,7 @@ import (
 	"github.com/alibaba/pouch/apis/types"
 	"github.com/alibaba/pouch/test/command"
 	"github.com/alibaba/pouch/test/environment"
+	"github.com/alibaba/pouch/test/util"
 
 	"github.com/go-check/check"
 	"github.com/gotestyourself/gotestyourself/icmd"
@@ -30,7 +31,7 @@ func (suite *PouchRunSuite) SetUpSuite(c *check.C) {
 
 	environment.PruneAllContainers(apiClient)
 
-	command.PouchRun("pull", busyboxImage).Assert(c, icmd.Success)
+	PullImage(c, busyboxImage)
 }
 
 // TearDownTest does cleanup work in the end of each test.
@@ -182,9 +183,11 @@ func (suite *PouchRunSuite) TestRunInWrongWay(c *check.C) {
 
 // TestRunEnableLxcfs is to verify run container with lxcfs.
 func (suite *PouchRunSuite) TestRunEnableLxcfs(c *check.C) {
+	// TODO: also check if the pouchd started with lxcfs option
+	SkipIfFalse(c, environment.IsLxcfsEnabled)
 	name := "test-run-lxcfs"
 
-	command.PouchRun("run", "--name", name, "-m", "512M", "--enableLxcfs=true",
+	command.PouchRun("run", "-d", "--name", name, "-m", "512M", "--enableLxcfs=true",
 		busyboxImage, "sleep", "10000").Assert(c, icmd.Success)
 
 	res := command.PouchRun("exec", name, "head", "-n", "5", "/proc/meminfo")
@@ -236,7 +239,7 @@ func (suite *PouchRunSuite) TestRunRestartPolicyNone(c *check.C) {
 func (suite *PouchRunSuite) TestRunWithIPCMode(c *check.C) {
 	name := "test-run-with-ipc-mode"
 
-	res := command.PouchRun("run", "--name", name, "--ipc", "host", busyboxImage)
+	res := command.PouchRun("run", "-d", "--name", name, "--ipc", "host", busyboxImage)
 	res.Assert(c, icmd.Success)
 	DelContainerForceMultyTime(c, name)
 }
@@ -246,7 +249,7 @@ func (suite *PouchRunSuite) TestRunWithIPCMode(c *check.C) {
 func (suite *PouchRunSuite) TestRunWithPIDMode(c *check.C) {
 	name := "test-run-with-pid-mode"
 
-	res := command.PouchRun("run", "--name", name, "--pid", "host", busyboxImage)
+	res := command.PouchRun("run", "-d", "--name", name, "--pid", "host", busyboxImage)
 	res.Assert(c, icmd.Success)
 	DelContainerForceMultyTime(c, name)
 }
@@ -255,7 +258,7 @@ func (suite *PouchRunSuite) TestRunWithPIDMode(c *check.C) {
 func (suite *PouchRunSuite) TestRunWithUTSMode(c *check.C) {
 	name := "test-run-with-uts-mode"
 
-	res := command.PouchRun("run", "--name", name, "--uts", "host", busyboxImage)
+	res := command.PouchRun("run", "-d", "--name", name, "--uts", "host", busyboxImage)
 	res.Assert(c, icmd.Success)
 	DelContainerForceMultyTime(c, name)
 }
@@ -265,7 +268,7 @@ func (suite *PouchRunSuite) TestRunWithSysctls(c *check.C) {
 	sysctl := "net.ipv4.ip_forward=1"
 	name := "run-sysctl"
 
-	res := command.PouchRun("run", "--name", name, "--sysctl", sysctl, busyboxImage)
+	res := command.PouchRun("run", "-d", "--name", name, "--sysctl", sysctl, busyboxImage)
 	res.Assert(c, icmd.Success)
 
 	output := command.PouchRun("exec", name, "cat", "/proc/sys/net/ipv4/ip_forward").Stdout()
@@ -280,7 +283,7 @@ func (suite *PouchRunSuite) TestRunWithUser(c *check.C) {
 	user := "1001"
 	name := "run-user"
 
-	res := command.PouchRun("run", "--name", name, "--user", user, busyboxImage)
+	res := command.PouchRun("run", "-d", "--name", name, "--user", user, busyboxImage)
 	res.Assert(c, icmd.Success)
 
 	output := command.PouchRun("exec", name, "id", "-u").Stdout()
@@ -303,7 +306,7 @@ func (suite *PouchRunSuite) TestRunWithAppArmor(c *check.C) {
 	appArmor := "apparmor=unconfined"
 	name := "run-apparmor"
 
-	res := command.PouchRun("run", "--name", name, "--security-opt", appArmor, busyboxImage)
+	res := command.PouchRun("run", "-d", "--name", name, "--security-opt", appArmor, busyboxImage)
 	res.Assert(c, icmd.Success)
 
 	// TODO: do the test more strictly with effective AppArmor profile.
@@ -316,7 +319,7 @@ func (suite *PouchRunSuite) TestRunWithSeccomp(c *check.C) {
 	seccomp := "seccomp=unconfined"
 	name := "run-seccomp"
 
-	res := command.PouchRun("run", "--name", name, "--security-opt", seccomp, busyboxImage)
+	res := command.PouchRun("run", "-d", "--name", name, "--security-opt", seccomp, busyboxImage)
 	res.Assert(c, icmd.Success)
 
 	// TODO: do the test more strictly with effective seccomp profile.
@@ -358,7 +361,7 @@ func (suite *PouchRunSuite) TestRunWithPrivilege(c *check.C) {
 func (suite *PouchRunSuite) TestRunWithBlkioWeight(c *check.C) {
 	name := "test-run-with-blkio-weight"
 
-	res := command.PouchRun("run", "--name", name, "--blkio-weight", "500", busyboxImage)
+	res := command.PouchRun("run", "-d", "--name", name, "--blkio-weight", "500", busyboxImage)
 	res.Assert(c, icmd.Success)
 	DelContainerForceMultyTime(c, name)
 }
@@ -398,14 +401,14 @@ func (suite *PouchRunSuite) TestRunWithLimitedMemory(c *check.C) {
 
 	// test if the value is in inspect result
 	output := command.PouchRun("inspect", cname).Stdout()
-	result := &types.ContainerJSON{}
-	if err := json.Unmarshal([]byte(output), result); err != nil {
+	result := []types.ContainerJSON{}
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
 		c.Errorf("failed to decode inspect output: %v", err)
 	}
-	c.Assert(result.HostConfig.Memory, check.Equals, int64(104857600))
+	c.Assert(result[0].HostConfig.Memory, check.Equals, int64(104857600))
 
 	// test if cgroup has record the real value
-	containerID := result.ID
+	containerID := result[0].ID
 	path := fmt.Sprintf("/sys/fs/cgroup/memory/default/%s/memory.limit_in_bytes", containerID)
 
 	checkFileContains(c, path, "104857600")
@@ -422,14 +425,14 @@ func (suite *PouchRunSuite) TestRunWithMemoryswap(c *check.C) {
 
 	// test if the value is in inspect result
 	output := command.PouchRun("inspect", cname).Stdout()
-	result := &types.ContainerJSON{}
-	if err := json.Unmarshal([]byte(output), result); err != nil {
+	result := []types.ContainerJSON{}
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
 		c.Errorf("failed to decode inspect output: %v", err)
 	}
-	c.Assert(result.HostConfig.MemorySwap, check.Equals, int64(209715200))
+	c.Assert(result[0].HostConfig.MemorySwap, check.Equals, int64(209715200))
 
 	// test if cgroup has record the real value
-	containerID := result.ID
+	containerID := result[0].ID
 	path := fmt.Sprintf("/sys/fs/cgroup/memory/default/%s/memory.memsw.limit_in_bytes", containerID)
 	checkFileContains(c, path, "209715200")
 
@@ -445,14 +448,14 @@ func (suite *PouchRunSuite) TestRunWithMemoryswappiness(c *check.C) {
 
 	// test if the value is in inspect result
 	output := command.PouchRun("inspect", cname).Stdout()
-	result := &types.ContainerJSON{}
-	if err := json.Unmarshal([]byte(output), result); err != nil {
+	result := []types.ContainerJSON{}
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
 		c.Errorf("failed to decode inspect output: %v", err)
 	}
-	c.Assert(int64(*result.HostConfig.MemorySwappiness), check.Equals, int64(70))
+	c.Assert(int64(*result[0].HostConfig.MemorySwappiness), check.Equals, int64(70))
 
 	// test if cgroup has record the real value
-	containerID := result.ID
+	containerID := result[0].ID
 	path := fmt.Sprintf("/sys/fs/cgroup/memory/default/%s/memory.swappiness", containerID)
 	checkFileContains(c, path, "70")
 
@@ -462,22 +465,32 @@ func (suite *PouchRunSuite) TestRunWithMemoryswappiness(c *check.C) {
 // TestRunWithCPULimit tests CPU related flags.
 func (suite *PouchRunSuite) TestRunWithCPULimit(c *check.C) {
 	cname := "TestRunWithCPULimit"
-	command.PouchRun("run", "-d", "--cpuset-cpus", "0", "--cpuset-mems", "0",
-		"--cpu-share", "1000", "--name", cname, busyboxImage, "sleep", "10000").Stdout()
+	command.PouchRun("run", "-d",
+		"--cpuset-cpus", "0",
+		"--cpuset-mems", "0",
+		"--cpu-share", "1000",
+		"--cpu-period", "1000",
+		"--cpu-quota", "1000",
+		"--name", cname,
+		busyboxImage,
+		"sleep", "10000").Stdout()
 
 	// test if the value is in inspect result
 	output := command.PouchRun("inspect", cname).Stdout()
-	result := &types.ContainerJSON{}
-	if err := json.Unmarshal([]byte(output), result); err != nil {
+	result := []types.ContainerJSON{}
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
 		c.Errorf("failed to decode inspect output: %v", err)
 	}
 
-	c.Assert(result.HostConfig.CpusetMems, check.Equals, "0")
-	c.Assert(result.HostConfig.CPUShares, check.Equals, int64(1000))
-	c.Assert(result.HostConfig.CpusetCpus, check.Equals, "0")
+	// check whether the user setting options are in containers' metadata
+	c.Assert(result[0].HostConfig.CpusetMems, check.Equals, "0")
+	c.Assert(result[0].HostConfig.CPUShares, check.Equals, int64(1000))
+	c.Assert(result[0].HostConfig.CpusetCpus, check.Equals, "0")
+	c.Assert(result[0].HostConfig.CPUPeriod, check.Equals, int64(1000))
+	c.Assert(result[0].HostConfig.CPUQuota, check.Equals, int64(1000))
 
 	// test if cgroup has record the real value
-	containerID := result.ID
+	containerID := result[0].ID
 	{
 		path := fmt.Sprintf("/sys/fs/cgroup/cpuset/default/%s/cpuset.cpus", containerID)
 		checkFileContains(c, path, "0")
@@ -488,6 +501,14 @@ func (suite *PouchRunSuite) TestRunWithCPULimit(c *check.C) {
 	}
 	{
 		path := fmt.Sprintf("/sys/fs/cgroup/cpu/default/%s/cpu.shares", containerID)
+		checkFileContains(c, path, "1000")
+	}
+	{
+		path := fmt.Sprintf("/sys/fs/cgroup/cpu/default/%s/cpu.cfs_period_us", containerID)
+		checkFileContains(c, path, "1000")
+	}
+	{
+		path := fmt.Sprintf("/sys/fs/cgroup/cpu/default/%s/cpu.cfs_quota_us", containerID)
 		checkFileContains(c, path, "1000")
 	}
 
@@ -502,15 +523,15 @@ func (suite *PouchRunSuite) TestRunBlockIOWeight(c *check.C) {
 
 	// test if the value is in inspect result
 	output := command.PouchRun("inspect", cname).Stdout()
-	result := &types.ContainerJSON{}
-	if err := json.Unmarshal([]byte(output), result); err != nil {
+	result := []types.ContainerJSON{}
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
 		c.Errorf("failed to decode inspect output: %v", err)
 	}
 
-	c.Assert(result.HostConfig.BlkioWeight, check.Equals, uint16(100))
+	c.Assert(result[0].HostConfig.BlkioWeight, check.Equals, uint16(100))
 
 	// test if cgroup has record the real value
-	containerID := result.ID
+	containerID := result[0].ID
 	{
 		path := fmt.Sprintf("/sys/fs/cgroup/blkio/default/%s/blkio.weight", containerID)
 		checkFileContains(c, path, "100")
@@ -521,23 +542,24 @@ func (suite *PouchRunSuite) TestRunBlockIOWeight(c *check.C) {
 // TestRunBlockIOWeightDevice tests running container with --blkio-weight-device flag.
 func (suite *PouchRunSuite) TestRunBlockIOWeightDevice(c *check.C) {
 	cname := "TestRunBlockIOWeightDevice"
-	if _, err := os.Stat("/dev/sda"); err != nil {
-		c.Skip("Host does not have direcory /dev/sda")
+	testDisk, found := environment.FindDisk()
+	if !found {
+		c.Skip("fail to find available disk for blkio test")
 	}
 
-	command.PouchRun("run", "-d", "--blkio-weight-device", "/dev/sda:100",
+	command.PouchRun("run", "-d", "--blkio-weight-device", testDisk+":100",
 		"--name", cname, busyboxImage, "sleep", "10000").Stdout()
 
 	// test if the value is in inspect result
 	output := command.PouchRun("inspect", cname).Stdout()
-	result := &types.ContainerJSON{}
-	if err := json.Unmarshal([]byte(output), result); err != nil {
+	result := []types.ContainerJSON{}
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
 		c.Errorf("failed to decode inspect output: %v", err)
 	}
 
-	c.Assert(len(result.HostConfig.BlkioWeightDevice), check.Equals, 1)
-	c.Assert(result.HostConfig.BlkioWeightDevice[0].Path, check.Equals, "/dev/sda")
-	c.Assert(result.HostConfig.BlkioWeightDevice[0].Weight, check.Equals, uint16(100))
+	c.Assert(len(result[0].HostConfig.BlkioWeightDevice), check.Equals, 1)
+	c.Assert(result[0].HostConfig.BlkioWeightDevice[0].Path, check.Equals, testDisk)
+	c.Assert(result[0].HostConfig.BlkioWeightDevice[0].Weight, check.Equals, uint16(100))
 
 	// test if cgroup has record the real value
 	//containerID := result.ID
@@ -551,26 +573,27 @@ func (suite *PouchRunSuite) TestRunBlockIOWeightDevice(c *check.C) {
 // TestRunDeviceReadBps tests running container with --device-read-bps flag.
 func (suite *PouchRunSuite) TestRunDeviceReadBps(c *check.C) {
 	cname := "TestRunDeviceReadBps"
-	if _, err := os.Stat("/dev/sda"); err != nil {
-		c.Skip("Host does not have direcory /dev/sda")
+	testDisk, found := environment.FindDisk()
+	if !found {
+		c.Skip("fail to find available disk for blkio test")
 	}
 
-	command.PouchRun("run", "-d", "--device-read-bps", "/dev/sda:1mb",
+	command.PouchRun("run", "-d", "--device-read-bps", testDisk+":1mb",
 		"--name", cname, busyboxImage, "sleep", "10000").Stdout()
 
 	// test if the value is in inspect result
 	output := command.PouchRun("inspect", cname).Stdout()
-	result := &types.ContainerJSON{}
-	if err := json.Unmarshal([]byte(output), result); err != nil {
+	result := []types.ContainerJSON{}
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
 		c.Errorf("failed to decode inspect output: %v", err)
 	}
 
-	c.Assert(len(result.HostConfig.BlkioDeviceReadBps), check.Equals, 1)
-	c.Assert(result.HostConfig.BlkioDeviceReadBps[0].Path, check.Equals, "/dev/sda")
-	c.Assert(result.HostConfig.BlkioDeviceReadBps[0].Rate, check.Equals, uint64(1048576))
+	c.Assert(len(result[0].HostConfig.BlkioDeviceReadBps), check.Equals, 1)
+	c.Assert(result[0].HostConfig.BlkioDeviceReadBps[0].Path, check.Equals, testDisk)
+	c.Assert(result[0].HostConfig.BlkioDeviceReadBps[0].Rate, check.Equals, uint64(1048576))
 
 	// test if cgroup has record the real value
-	containerID := result.ID
+	containerID := result[0].ID
 	{
 		path := fmt.Sprintf("/sys/fs/cgroup/blkio/default/%s/blkio.throttle.read_bps_device", containerID)
 		checkFileContains(c, path, "1048576")
@@ -581,26 +604,27 @@ func (suite *PouchRunSuite) TestRunDeviceReadBps(c *check.C) {
 // TestRunDeviceWriteBps tests running container with --device-write-bps flag.
 func (suite *PouchRunSuite) TestRunDeviceWriteBps(c *check.C) {
 	cname := "TestRunDeviceWriteBps"
-	if _, err := os.Stat("/dev/sda"); err != nil {
-		c.Skip("Host does not have direcory /dev/sda")
+	testDisk, found := environment.FindDisk()
+	if !found {
+		c.Skip("fail to find available disk for blkio test")
 	}
 
-	command.PouchRun("run", "-d", "--device-write-bps", "/dev/sda:1mb",
+	command.PouchRun("run", "-d", "--device-write-bps", testDisk+":1mb",
 		"--name", cname, busyboxImage, "sleep", "10000").Stdout()
 
 	// test if the value is in inspect result
 	output := command.PouchRun("inspect", cname).Stdout()
-	result := &types.ContainerJSON{}
-	if err := json.Unmarshal([]byte(output), result); err != nil {
+	result := []types.ContainerJSON{}
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
 		c.Errorf("failed to decode inspect output: %v", err)
 	}
 
-	c.Assert(len(result.HostConfig.BlkioDeviceWriteBps), check.Equals, 1)
-	c.Assert(result.HostConfig.BlkioDeviceWriteBps[0].Path, check.Equals, "/dev/sda")
-	c.Assert(result.HostConfig.BlkioDeviceWriteBps[0].Rate, check.Equals, uint64(1048576))
+	c.Assert(len(result[0].HostConfig.BlkioDeviceWriteBps), check.Equals, 1)
+	c.Assert(result[0].HostConfig.BlkioDeviceWriteBps[0].Path, check.Equals, testDisk)
+	c.Assert(result[0].HostConfig.BlkioDeviceWriteBps[0].Rate, check.Equals, uint64(1048576))
 
 	// test if cgroup has record the real value
-	containerID := result.ID
+	containerID := result[0].ID
 	{
 		path := fmt.Sprintf("/sys/fs/cgroup/blkio/default/%s/blkio.throttle.write_bps_device", containerID)
 		checkFileContains(c, path, "1048576")
@@ -611,26 +635,27 @@ func (suite *PouchRunSuite) TestRunDeviceWriteBps(c *check.C) {
 // TestRunDeviceReadIops tests running container with --device-read-iops flag.
 func (suite *PouchRunSuite) TestRunDeviceReadIops(c *check.C) {
 	cname := "TestRunDeviceReadIops"
-	if _, err := os.Stat("/dev/sda"); err != nil {
-		c.Skip("Host does not have direcory /dev/sda")
+	testDisk, found := environment.FindDisk()
+	if !found {
+		c.Skip("fail to find available disk for blkio test")
 	}
 
-	command.PouchRun("run", "-d", "--device-read-iops", "/dev/sda:1000",
+	command.PouchRun("run", "-d", "--device-read-iops", testDisk+":1000",
 		"--name", cname, busyboxImage, "sleep", "10000").Stdout()
 
 	// test if the value is in inspect result
 	output := command.PouchRun("inspect", cname).Stdout()
-	result := &types.ContainerJSON{}
-	if err := json.Unmarshal([]byte(output), result); err != nil {
+	result := []types.ContainerJSON{}
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
 		c.Errorf("failed to decode inspect output: %v", err)
 	}
 
-	c.Assert(len(result.HostConfig.BlkioDeviceReadIOps), check.Equals, 1)
-	c.Assert(result.HostConfig.BlkioDeviceReadIOps[0].Path, check.Equals, "/dev/sda")
-	c.Assert(result.HostConfig.BlkioDeviceReadIOps[0].Rate, check.Equals, uint64(1000))
+	c.Assert(len(result[0].HostConfig.BlkioDeviceReadIOps), check.Equals, 1)
+	c.Assert(result[0].HostConfig.BlkioDeviceReadIOps[0].Path, check.Equals, testDisk)
+	c.Assert(result[0].HostConfig.BlkioDeviceReadIOps[0].Rate, check.Equals, uint64(1000))
 
 	// test if cgroup has record the real value
-	containerID := result.ID
+	containerID := result[0].ID
 	{
 		path := fmt.Sprintf("/sys/fs/cgroup/blkio/default/%s/blkio.throttle.read_iops_device", containerID)
 		checkFileContains(c, path, "1000")
@@ -641,26 +666,27 @@ func (suite *PouchRunSuite) TestRunDeviceReadIops(c *check.C) {
 // TestRunDeviceWriteIops tests running container with --device-write-iops flag.
 func (suite *PouchRunSuite) TestRunDeviceWriteIops(c *check.C) {
 	cname := "TestRunDeviceWriteIops"
-	if _, err := os.Stat("/dev/sda"); err != nil {
-		c.Skip("Host does not have direcory /dev/sda")
+	testDisk, found := environment.FindDisk()
+	if !found {
+		c.Skip("fail to find available disk for blkio test")
 	}
 
-	command.PouchRun("run", "-d", "--device-write-iops", "/dev/sda:1000",
+	command.PouchRun("run", "-d", "--device-write-iops", testDisk+":1000",
 		"--name", cname, busyboxImage, "sleep", "10000").Stdout()
 
 	// test if the value is in inspect result
 	output := command.PouchRun("inspect", cname).Stdout()
-	result := &types.ContainerJSON{}
-	if err := json.Unmarshal([]byte(output), result); err != nil {
+	result := []types.ContainerJSON{}
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
 		c.Errorf("failed to decode inspect output: %v", err)
 	}
 
-	c.Assert(len(result.HostConfig.BlkioDeviceWriteIOps), check.Equals, 1)
-	c.Assert(result.HostConfig.BlkioDeviceWriteIOps[0].Path, check.Equals, "/dev/sda")
-	c.Assert(result.HostConfig.BlkioDeviceWriteIOps[0].Rate, check.Equals, uint64(1000))
+	c.Assert(len(result[0].HostConfig.BlkioDeviceWriteIOps), check.Equals, 1)
+	c.Assert(result[0].HostConfig.BlkioDeviceWriteIOps[0].Path, check.Equals, testDisk)
+	c.Assert(result[0].HostConfig.BlkioDeviceWriteIOps[0].Rate, check.Equals, uint64(1000))
 
 	// test if cgroup has record the real value
-	containerID := result.ID
+	containerID := result[0].ID
 	{
 		path := fmt.Sprintf("/sys/fs/cgroup/blkio/default/%s/blkio.throttle.write_iops_device", containerID)
 		checkFileContains(c, path, "1000")
@@ -699,7 +725,7 @@ func (suite *PouchRunSuite) TestRunWithHostFileVolume(c *check.C) {
 	filepath := "/tmp/TestRunWithHostFileVolume.md"
 	icmd.RunCommand("touch", filepath).Assert(c, icmd.Success)
 
-	cname := "TestRunWithCPULimit"
+	cname := "TestRunWithHostFileVolume"
 	command.PouchRun("run", "-d", "--name", cname, "-v", fmt.Sprintf("%s:%s", filepath, filepath), busyboxImage).Assert(c, icmd.Success)
 
 	DelContainerForceMultyTime(c, cname)
@@ -718,11 +744,11 @@ func testRunWithCgroupParent(c *check.C, cgroupParent, name string) {
 	command.PouchRun("run", "-d", "-m", "300M", "--cgroup-parent", cgroupParent, "--name", name, busyboxImage).Assert(c, icmd.Success)
 
 	output := command.PouchRun("inspect", name).Stdout()
-	result := &types.ContainerJSON{}
-	if err := json.Unmarshal([]byte(output), result); err != nil {
+	result := []types.ContainerJSON{}
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
 		c.Errorf("failed to decode inspect output: %v", err)
 	}
-	containerID := result.ID
+	containerID := result[0].ID
 
 	// this code slice may not robust, but for this test case is enough.
 	if strings.HasPrefix(cgroupParent, "/") {
@@ -784,8 +810,109 @@ func (suite *PouchRunSuite) TestRunWithDiskQuota(c *check.C) {
 	for _, line := range strings.Split(out, "\n") {
 		if strings.Contains(line, "/") && strings.Contains(line, "2048000") {
 			found = true
+			break
 		}
 	}
 
 	c.Assert(found, check.Equals, true)
+}
+
+// TestRunWithAnnotation is to verify the valid running container with annotation, and verify SpecAnnotation filed has been in inspect output.
+func (suite *PouchRunSuite) TestRunWithAnnotation(c *check.C) {
+	cname := "TestRunWithAnnotation"
+	command.PouchRun("run", "-d", "--annotation", "a=b", "--annotation", "foo=bar", "--name", cname, busyboxImage).Assert(c, icmd.Success)
+
+	output := command.PouchRun("inspect", cname).Stdout()
+	result := []types.ContainerJSON{}
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
+		c.Errorf("failed to decode inspect output: %v", err)
+	}
+
+	// kv in map not in order.
+	var annotationSlice []string
+	for k, v := range result[0].Config.SpecAnnotation {
+		annotationSlice = append(annotationSlice, fmt.Sprintf("%s=%s", k, v))
+	}
+	annotationStr := strings.Join(annotationSlice, " ")
+
+	c.Assert(util.PartialEqual(annotationStr, "a=b"), check.IsNil)
+	c.Assert(util.PartialEqual(annotationStr, "foo=bar"), check.IsNil)
+}
+
+// TestRunWithExitCode is to verify the valid running container with exit code != 0.
+func (suite *PouchRunSuite) TestRunWithExitCode(c *check.C) {
+	cname := "TestRunWithExitCode"
+	ret := command.PouchRun("run", "--name", cname, busyboxImage, "sh", "-c", "exit 101")
+	// test process exit code $? == 101
+	ret.Assert(c, icmd.Expected{ExitCode: 101})
+
+	// test container ExitCode == 101
+	output := command.PouchRun("inspect", cname).Stdout()
+	result := []types.ContainerJSON{}
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
+		c.Errorf("failed to decode inspect output: %v", err)
+	}
+	c.Assert(result[0].State.ExitCode, check.Equals, int64(101))
+}
+
+// TestRunWithDiskQuotaRegular tests running container with --disk-quota.
+func (suite *PouchRunSuite) TestRunWithDiskQuotaRegular(c *check.C) {
+	if !environment.IsDiskQuota() {
+		c.Skip("Host does not support disk quota")
+	}
+
+	volumeName := "diskquota-volume"
+	containerName := "diskquota-regular"
+
+	ret := command.PouchRun("volume", "create", "-n", volumeName, "-o", "size=256m", "-o", "mount=/data/volume")
+	defer func() {
+		command.PouchRun("volume", "rm", volumeName).Assert(c, icmd.Success)
+	}()
+	ret.Assert(c, icmd.Success)
+
+	ret = command.PouchRun("run",
+		"--disk-quota=1024m",
+		`--disk-quota=".*=512m"`,
+		`--disk-quota="/mnt/mount1=768m"`,
+		"-v", "/data/mount1:/mnt/mount1",
+		"-v", "/data/mount2:/mnt/mount2",
+		"-v", "diskquota-volume:/mnt/mount3",
+		"--name", containerName, busyboxImage, "df")
+	defer func() {
+		command.PouchRun("rm", "-f", containerName).Assert(c, icmd.Success)
+	}()
+	ret.Assert(c, icmd.Success)
+
+	out := ret.Stdout()
+
+	rootFound := false
+	mount1Found := false
+	mount2Found := false
+	mount3Found := false
+	for _, line := range strings.Split(out, "\n") {
+		if strings.Contains(line, "/") && strings.Contains(line, "1048576") {
+			rootFound = true
+			continue
+		}
+
+		if strings.Contains(line, "/mnt/mount1") && strings.Contains(line, "786432") {
+			mount1Found = true
+			continue
+		}
+
+		if strings.Contains(line, "/mnt/mount2") && strings.Contains(line, "524288") {
+			mount2Found = true
+			continue
+		}
+
+		if strings.Contains(line, "/mnt/mount3") && strings.Contains(line, "262144") {
+			mount3Found = true
+			continue
+		}
+	}
+
+	c.Assert(rootFound, check.Equals, true)
+	c.Assert(mount1Found, check.Equals, true)
+	c.Assert(mount2Found, check.Equals, true)
+	c.Assert(mount3Found, check.Equals, true)
 }

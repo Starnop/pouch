@@ -26,7 +26,7 @@ func (suite *PouchInspectSuite) SetUpSuite(c *check.C) {
 
 	environment.PruneAllContainers(apiClient)
 
-	command.PouchRun("pull", busyboxImage).Assert(c, icmd.Success)
+	PullImage(c, busyboxImage)
 }
 
 // TearDownTest does cleanup work in the end of each test.
@@ -40,11 +40,11 @@ func (suite *PouchInspectSuite) TestInspectFormat(c *check.C) {
 	command.PouchRun("create", "-m", "30M", "--name", name, busyboxImage).Assert(c, icmd.Success)
 
 	output := command.PouchRun("inspect", name).Stdout()
-	result := &types.ContainerJSON{}
-	if err := json.Unmarshal([]byte(output), result); err != nil {
+	result := []types.ContainerJSON{}
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
 		c.Errorf("failed to decode inspect output: %v", err)
 	}
-	containerID := result.ID
+	containerID := result[0].ID
 
 	// inspect Container ID
 	output = command.PouchRun("inspect", "-f", "{{.ID}}", name).Stdout()
@@ -52,7 +52,7 @@ func (suite *PouchInspectSuite) TestInspectFormat(c *check.C) {
 
 	// inspect Memory
 	output = command.PouchRun("inspect", "-f", "{{.HostConfig.Memory}}", name).Stdout()
-	c.Assert(output, check.Equals, fmt.Sprintf("%d\n", result.HostConfig.Memory))
+	c.Assert(output, check.Equals, fmt.Sprintf("%d\n", result[0].HostConfig.Memory))
 
 	DelContainerForceMultyTime(c, name)
 }
@@ -73,4 +73,71 @@ func (suite *PouchInspectSuite) TestInspectWrongFormat(c *check.C) {
 
 	DelContainerForceMultyTime(c, name)
 
+}
+
+// TestMultiInspect is to verify inspect command with multiple args.
+func (suite *PouchInspectSuite) TestMultiInspect(c *check.C) {
+	names := []string{
+		"multi-inspect-print-1",
+		"multi-inspect-print-2",
+	}
+	setUp := func() {
+		for _, name := range names {
+			command.PouchRun("create", "-m", "30M", "--name", name, busyboxImage).Assert(c, icmd.Success)
+		}
+	}
+	cleanUp := func() {
+		for _, name := range names {
+			DelContainerForceMultyTime(c, name)
+		}
+	}
+	setUp()
+	defer cleanUp()
+
+	output := command.PouchRun("inspect", "-f", "{{.Name}}", names[0], names[1]).Stdout()
+	expectedOutput := "multi-inspect-print-1\nmulti-inspect-print-2\n"
+	c.Assert(output, check.Equals, expectedOutput)
+}
+
+// TestMultiInspect is to verify inspect command with multiple args.
+func (suite *PouchInspectSuite) TestMultiInspectErrors(c *check.C) {
+
+	errorCases := []struct {
+		containers     []string
+		args           []string
+		expectedOutput string
+	}{
+		{
+			containers: []string{},
+			args:       []string{"multi-inspect-print-1", "multi-inspect-print-2"},
+			expectedOutput: "\nError: Fetch object error: {\"message\":\"container: multi-inspect-print-1: not found\"}\n" +
+				"Error: Fetch object error: {\"message\":\"container: multi-inspect-print-2: not found\"}\n",
+		},
+		{
+			containers: []string{"multi-inspect-print-1"},
+			args:       []string{"multi-inspect-print-1", "multi-inspect-print-2"},
+			expectedOutput: "multi-inspect-print-1\n" +
+				"Error: Fetch object error: {\"message\":\"container: multi-inspect-print-2: not found\"}\n",
+		},
+	}
+
+	runContainers := func(names []string) {
+		for _, name := range names {
+			command.PouchRun("create", "-m", "30M", "--name", name, busyboxImage).Assert(c, icmd.Success)
+		}
+	}
+	delContainers := func(names []string) {
+		for _, name := range names {
+			DelContainerForceMultyTime(c, name)
+		}
+	}
+
+	for _, errCase := range errorCases {
+		runContainers(errCase.containers)
+		res := command.PouchRun("inspect", "-f", "{{.Name}}", errCase.args[0], errCase.args[1])
+		c.Assert(res.Error, check.NotNil)
+		output := res.Combined()
+		c.Assert(output, check.Equals, errCase.expectedOutput)
+		delContainers(errCase.containers)
+	}
 }

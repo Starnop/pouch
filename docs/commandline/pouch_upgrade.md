@@ -22,11 +22,14 @@ test1
 ### Options
 
 ```
+      --annotation strings           Additional annotation for runtime
       --blkio-weight uint16          Block IO (relative weight), between 10 and 1000, or 0 to disable
       --blkio-weight-device value    Block IO weight (relative device weight) (default [])
       --cap-add strings              Add Linux capabilities
       --cap-drop strings             Drop Linux capabilities
       --cgroup-parent string         Optional parent cgroup for the container (default "default")
+      --cpu-period int               Limit CPU CFS (Completely Fair Scheduler) period, range is in [1000(1ms),1000000(1s)]
+      --cpu-quota int                Limit CPU CFS (Completely Fair Scheduler) quota, range is in [1000,∞)
       --cpu-share int                CPU shares (relative weight)
       --cpuset-cpus string           CPUs in which to allow execution (0-3, 0,1)
       --cpuset-mems string           MEMs in which to allow execution (0-3, 0,1)
@@ -70,7 +73,7 @@ test1
   -t, --tty                          Allocate a pseudo-TTY
   -u, --user string                  UID
       --uts string                   UTS namespace to use
-  -v, --volume strings               Bind mount volumes to container
+  -v, --volume strings               Bind mount volumes to container, format is: [source:]<destination>[:mode], [source] can be volume or host's path, <destination> is container's path, [mode] can be "ro/rw/dr/rr/z/Z/nocopy/private/rprivate/slave/rslave/shared/rshared"
   -w, --workdir string               Set the working directory in a container
 ```
 

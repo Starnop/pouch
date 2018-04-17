@@ -63,49 +63,21 @@ func FormatTimeInterval(input int64) (formattedTime string, err error) {
 		return "", errInvalid
 	}
 
-	if diff >= Year {
-		year := int(diff / Year)
-		formattedTime += strconv.Itoa(year) + " year"
-		if year > 1 {
-			formattedTime += "s"
+	timeThresholds := []time.Duration{Year, Month, Week, Day, Hour, Minute, Second}
+	timeNames := []string{"year", "month", "week", "day", "hour", "minute", "second"}
+
+	for i, threshold := range timeThresholds {
+		if diff >= threshold {
+			count := int(diff / threshold)
+			formattedTime += strconv.Itoa(count) + " " + timeNames[i]
+			if count > 1 {
+				formattedTime += "s"
+			}
+			break
 		}
-	} else if diff >= Month {
-		month := int(diff / Month)
-		formattedTime += strconv.Itoa(month) + " month"
-		if month > 1 {
-			formattedTime += "s"
-		}
-	} else if diff >= Week {
-		week := int(diff / Week)
-		formattedTime += strconv.Itoa(week) + " week"
-		if week > 1 {
-			formattedTime += "s"
-		}
-	} else if diff >= Day {
-		day := int(diff / Day)
-		formattedTime += strconv.Itoa(day) + " day"
-		if day > 1 {
-			formattedTime += "s"
-		}
-	} else if diff >= Hour {
-		hour := int(diff / Hour)
-		formattedTime += strconv.Itoa(hour) + " hour"
-		if hour > 1 {
-			formattedTime += "s"
-		}
-	} else if diff >= Minute {
-		minute := int(diff / Minute)
-		formattedTime += strconv.Itoa(minute) + " minute"
-		if minute > 1 {
-			formattedTime += "s"
-		}
-	} else if diff >= Second {
-		second := int(diff / Second)
-		formattedTime += strconv.Itoa(second) + " second"
-		if second > 1 {
-			formattedTime += "s"
-		}
-	} else {
+	}
+
+	if diff < Second {
 		formattedTime += "0 second"
 	}
 
@@ -195,4 +167,79 @@ func isEmptyValue(v reflect.Value) bool {
 		return v.IsNil()
 	}
 	return false
+}
+
+// DeDuplicate make a slice with no duplicated elements.
+func DeDuplicate(input []string) []string {
+	if input == nil {
+		return nil
+	}
+	result := []string{}
+	internal := map[string]struct{}{}
+	for _, value := range input {
+		if _, exist := internal[value]; !exist {
+			internal[value] = struct{}{}
+			result = append(result, value)
+		}
+	}
+	return result
+}
+
+// FormatErrMsgFunc is a function which used by CombineErrors to
+// format error message
+type FormatErrMsgFunc func(idx int, err error) (string, error)
+
+// CombineErrors is a function which used by Inspect to merge multiple errors
+// into one error.
+func CombineErrors(errs []error, formatErrMsg FormatErrMsgFunc) error {
+	var errMsgs []string
+	for idx, err := range errs {
+		formattedErrMsg, formatError := formatErrMsg(idx, err)
+		if formatError != nil {
+			return fmt.Errorf("Combine errors error: %s", formatError.Error())
+		}
+		errMsgs = append(errMsgs, formattedErrMsg)
+	}
+	combinedErrMsg := strings.Join(errMsgs, "\n")
+	return errors.New(combinedErrMsg)
+}
+
+// Contains check if a interface in a interface slice.
+func Contains(input []interface{}, value interface{}) (bool, error) {
+	if value == nil || len(input) == 0 {
+		return false, nil
+	}
+
+	if reflect.TypeOf(input[0]) != reflect.TypeOf(value) {
+		return false, fmt.Errorf("interface type not equals")
+	}
+
+	switch v := value.(type) {
+	case int, int64, float64, string:
+		for _, v := range input {
+			if v == value {
+				return true, nil
+			}
+		}
+		return false, nil
+	// TODO: add more types
+	default:
+		r := reflect.TypeOf(v)
+		return false, fmt.Errorf("Not support: %s", r)
+	}
+}
+
+// StringInSlice checks if a string in the slice.
+func StringInSlice(input []string, str string) bool {
+	if str == "" || len(input) == 0 {
+		return false
+	}
+
+	result := make([]interface{}, len(input))
+	for i, v := range input {
+		result[i] = v
+	}
+
+	exists, _ := Contains(result, str)
+	return exists
 }

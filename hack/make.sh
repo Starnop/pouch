@@ -9,6 +9,12 @@ DIR="$( cd "$( dirname "$0" )/.." && pwd )"
 cd $DIR/
 SOURCEDIR=/go/src/github.com/alibaba/pouch
 IMAGE=pouch:test
+if [[ $SOURCEDIR != $DIR ]];then
+	[ -d $SOURCEDIR ] && rm -rf $SOURCEDIR
+	POUCHTOPDIR=$(dirname $SOURCEDIR)
+	[ ! -d $POUCHTOPDIR ] && mkdir -p $POUCHTOPDIR
+	ln -sf $DIR/ $SOURCEDIR
+fi
 
 # install pouch and essential binaries: containerd, runc and so on
 function install_pouch ()
@@ -37,9 +43,6 @@ function install_pouch ()
 			apt-get update
 			apt-get install -y lxcfs
 		fi
-
-		# MUST stop lxcfs service, so pouchd could take over it.
-		service lxcfs stop
 	else
 		sh -x $DIR/hack/install_lxcfs_on_centos.sh
 	fi
@@ -91,13 +94,6 @@ function target()
 	    install_dumb_init || echo "Warning: dumb-init install failed! rich container related tests will be skipped"
 		docker run --rm -v $(pwd):$SOURCEDIR $IMAGE bash -c "cd test && go test -c -o integration-test"
 
-		if [[ $SOURCEDIR != $DIR ]];then
-			[ -d $SOURCEDIR ] && rm -rf $SOURCEDIR
-			POUCHTOPDIR=$(dirname $SOURCEDIR)
-			[ ! -d $POUCHTOPDIR ] && mkdir -p $POUCHTOPDIR
-			ln -sf $DIR/ $SOURCEDIR
-		fi
-
 		#start pouch daemon
 		echo "start pouch daemon"
 		if stat /usr/bin/lxcfs ; then
@@ -123,10 +119,13 @@ function target()
 			fi
 		done
 
-		pouch pull registry.hub.docker.com/library/busybox:latest >/dev/null
+		pouch pull registry.hub.docker.com/library/busybox:1.28 >/dev/null
 
 		echo "verify pouch version"
 		pouch version
+
+        # copy tls file
+        cp -rf $DIR/test/tls /tmp/
 
 		# If test is failed, print pouch daemon log.
 		$DIR/test/integration-test -test.v -check.v || { echo "pouch daemon log:"; cat $TMP/log; return 1; } 

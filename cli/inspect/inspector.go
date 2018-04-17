@@ -3,13 +3,15 @@ package inspect
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
+	"strings"
 	"text/template"
 
+	"github.com/alibaba/pouch/pkg/utils"
 	"github.com/alibaba/pouch/pkg/utils/templates"
 
 	"github.com/pkg/errors"
-	"github.com/sirupsen/logrus"
 )
 
 // Inspector defines an interface to implement to process elements.
@@ -53,26 +55,43 @@ type GetRefFunc func(ref string) (interface{}, error)
 
 // Inspect fetches objects by reference and writes the json representation
 // to the output writer.
-func Inspect(out io.Writer, ref string, tmplStr string, getRef GetRefFunc) error {
+func Inspect(out io.Writer, refs []string, tmplStr string, getRef GetRefFunc) error {
+	var errs []error
+
 	inspector, err := NewTemplateInspectorFromString(out, tmplStr)
 	if err != nil {
 		return err
 	}
 
-	element, err := getRef(ref)
-	if err != nil {
-		return errors.Errorf("Template parsing error: %v", err)
-	}
+	for _, ref := range refs {
+		element, err := getRef(ref)
+		if err != nil {
+			errs = append(errs, errors.Errorf("Fetch object error: %v", err))
+			continue
+		}
 
-	if err := inspector.Inspect(element); err != nil {
-		return err
+		if err := inspector.Inspect(element); err != nil {
+			errs = append(errs, err)
+		}
 	}
 
 	if err := inspector.Flush(); err != nil {
-		logrus.Errorf("%s\n", err)
+		return err
 	}
 
-	return nil
+	if len(errs) == 0 {
+		return nil
+	}
+
+	formatErrMsg := func(idx int, err error) (string, error) {
+		errMsg := err.Error()
+		errMsg = strings.TrimRight(errMsg, "\n")
+		if idx != 0 {
+			errMsg = fmt.Sprintf("Error: %s", errMsg)
+		}
+		return errMsg, nil
+	}
+	return utils.CombineErrors(errs, formatErrMsg)
 }
 
 // Inspect executes the inspect template.
@@ -100,7 +119,7 @@ func (i *TemplateInspector) Flush() error {
 // IndentedInspector uses a buffer to stop the indented representation of an element.
 type IndentedInspector struct {
 	outputStream io.Writer
-	elements     interface{}
+	elements     []interface{}
 	rawElements  [][]byte
 }
 
@@ -114,7 +133,7 @@ func NewIndentedInspector(outputStream io.Writer) Inspector {
 // Inspect writes the raw element with an indented json format.
 func (i *IndentedInspector) Inspect(typedElement interface{}) error {
 	// TODO handle raw elements
-	i.elements = typedElement
+	i.elements = append(i.elements, typedElement)
 	return nil
 }
 
@@ -122,7 +141,7 @@ func (i *IndentedInspector) Inspect(typedElement interface{}) error {
 func (i *IndentedInspector) Flush() error {
 	// TODO handle raw elements
 	if i.elements == nil {
-		_, err := io.WriteString(i.outputStream, "\n")
+		_, err := io.WriteString(i.outputStream, "[]\n")
 		return err
 	}
 

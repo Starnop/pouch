@@ -3,10 +3,19 @@ package mgr
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 )
+
+func clearReadonly(m *specs.Mount) {
+	var opts []string
+	for _, o := range m.Options {
+		if o != "ro" {
+			opts = append(opts, o)
+		}
+	}
+	m.Options = opts
+}
 
 func setupMounts(ctx context.Context, c *ContainerMeta, spec *SpecWrapper) error {
 	s := spec.s
@@ -14,30 +23,58 @@ func setupMounts(ctx context.Context, c *ContainerMeta, spec *SpecWrapper) error
 	if c.HostConfig == nil {
 		return nil
 	}
-	for _, v := range c.HostConfig.Binds {
-		sd := strings.Split(v, ":")
-		lensd := len(sd)
-		if lensd < 2 || lensd > 3 {
-			return fmt.Errorf("unknown bind: %s", v)
-		}
-		opt := []string{"rbind"}
-		if lensd == 3 {
-			opt = append(opt, strings.Split(sd[2], ",")...)
-			// Set rootfs propagation, default setting is private.
-			if strings.Contains(sd[2], "rshared") {
-				s.Linux.RootfsPropagation = "rshared"
+	for _, mp := range c.Mounts {
+		// check duplicate mountpoint
+		for _, sm := range mounts {
+			if sm.Destination == mp.Destination {
+				return fmt.Errorf("duplicate mount point: %s", mp.Destination)
 			}
-			if strings.Contains(sd[2], "rslave") && s.Linux.RootfsPropagation != "rshared" {
+		}
+
+		pg := mp.Propagation
+		rootfspg := s.Linux.RootfsPropagation
+		// Set rootfs propagation, default setting is private.
+		switch pg {
+		case "shared", "rshared":
+			if rootfspg != "shared" && rootfspg != "rshared" {
+				s.Linux.RootfsPropagation = "shared"
+			}
+		case "slave", "rslave":
+			if rootfspg != "shared" && rootfspg != "rshared" && rootfspg != "slave" && rootfspg != "rslave" {
 				s.Linux.RootfsPropagation = "rslave"
 			}
 		}
+
+		opts := []string{"rbind"}
+		if !mp.RW {
+			opts = append(opts, "ro")
+		}
+		if pg != "" {
+			opts = append(opts, pg)
+		}
+
+		// TODO: support copy data.
+
 		mounts = append(mounts, specs.Mount{
-			Destination: sd[1],
-			Source:      sd[0],
+			Source:      mp.Source,
+			Destination: mp.Destination,
 			Type:        "bind",
-			Options:     opt,
+			Options:     opts,
 		})
 	}
 	s.Mounts = mounts
+
+	if c.HostConfig.Privileged {
+		if !s.Root.Readonly {
+			// Clear readonly for /sys.
+			for i := range s.Mounts {
+				if s.Mounts[i].Destination == "/sys" {
+					clearReadonly(&s.Mounts[i])
+				}
+			}
+		}
+		s.Linux.ReadonlyPaths = nil
+		s.Linux.MaskedPaths = nil
+	}
 	return nil
 }

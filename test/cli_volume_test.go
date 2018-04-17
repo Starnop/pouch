@@ -9,6 +9,7 @@ import (
 	"github.com/alibaba/pouch/apis/types"
 	"github.com/alibaba/pouch/test/command"
 	"github.com/alibaba/pouch/test/environment"
+	"github.com/alibaba/pouch/test/request"
 
 	"github.com/go-check/check"
 	"github.com/gotestyourself/gotestyourself/icmd"
@@ -25,7 +26,7 @@ func init() {
 func (suite *PouchVolumeSuite) SetUpSuite(c *check.C) {
 	SkipIfFalse(c, environment.IsLinux)
 
-	command.PouchRun("pull", busyboxImage).Assert(c, icmd.Success)
+	PullImage(c, busyboxImage)
 }
 
 // TestVolumeWorks tests "pouch volume" work.
@@ -174,8 +175,8 @@ func (suite *PouchVolumeSuite) TestVolumeInspectFormat(c *check.C) {
 	defer command.PouchRun("volume", "remove", funcname)
 
 	output := command.PouchRun("volume", "inspect", funcname).Stdout()
-	result := &types.ContainerJSON{}
-	if err := json.Unmarshal([]byte(output), result); err != nil {
+	result := []types.ContainerJSON{}
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
 		c.Errorf("failed to decode inspect output: %v", err)
 	}
 
@@ -202,4 +203,110 @@ func (suite *PouchVolumeSuite) TestVolumeUsingByContainer(c *check.C) {
 
 	command.PouchRun("rm", "-f", funcname).Assert(c, icmd.Success)
 	command.PouchRun("volume", "rm", volumeName).Assert(c, icmd.Success)
+}
+
+// TestVolumeBindReplaceMode tests the volume "direct replace(dr)" mode.
+func (suite *PouchVolumeSuite) TestVolumeBindReplaceMode(c *check.C) {
+	pc, _, _, _ := runtime.Caller(0)
+	tmpname := strings.Split(runtime.FuncForPC(pc).Name(), ".")
+	var funcname string
+	for i := range tmpname {
+		funcname = tmpname[i]
+	}
+
+	volumeName := "volume_" + funcname
+	command.PouchRun("volume", "create", "--name", volumeName).Assert(c, icmd.Success)
+	command.PouchRun("run", "-d", "-v", volumeName+":/mnt", "-v", volumeName+":/home:dr", "--name", funcname, busyboxImage, "top").Assert(c, icmd.Success)
+	defer func() {
+		command.PouchRun("volume", "rm", volumeName)
+		command.PouchRun("rm", "-f", funcname)
+	}()
+
+	resp, err := request.Get("/containers/" + funcname + "/json")
+	c.Assert(err, check.IsNil)
+	CheckRespStatus(c, resp, 200)
+
+	got := types.ContainerJSON{}
+	err = request.DecodeBody(&got, resp.Body)
+	c.Assert(err, check.IsNil)
+
+	found := false
+	for _, m := range got.Mounts {
+		if m.Replace == "dr" && m.Mode == "dr" && m.Source == "/mnt/local/volume_TestVolumeBindReplaceMode/home" {
+			found = true
+		}
+	}
+	c.Assert(found, check.Equals, true)
+}
+
+// TestVolumeList tests the volume list.
+func (suite *PouchVolumeSuite) TestVolumeList(c *check.C) {
+	pc, _, _, _ := runtime.Caller(0)
+	tmpname := strings.Split(runtime.FuncForPC(pc).Name(), ".")
+	var funcname string
+	for i := range tmpname {
+		funcname = tmpname[i]
+	}
+
+	volumeName := "volume_" + funcname
+	volumeName1 := "volume_" + funcname + "_1"
+	command.PouchRun("volume", "create", "--name", volumeName1, "-o", "size=1g").Assert(c, icmd.Success)
+	defer command.PouchRun("volume", "rm", volumeName1)
+
+	volumeName2 := "volume_" + funcname + "_2"
+	command.PouchRun("volume", "create", "--name", volumeName2, "-o", "size=2g").Assert(c, icmd.Success)
+	defer command.PouchRun("volume", "rm", volumeName2)
+
+	volumeName3 := "volume_" + funcname + "_3"
+	command.PouchRun("volume", "create", "--name", volumeName3, "-o", "size=3g").Assert(c, icmd.Success)
+	defer command.PouchRun("volume", "rm", volumeName3)
+
+	ret := command.PouchRun("volume", "list")
+	ret.Assert(c, icmd.Success)
+
+	for _, line := range strings.Split(ret.Stdout(), "\n") {
+		if strings.Contains(line, volumeName) {
+			if !strings.Contains(line, "local") {
+				c.Errorf("list result have no driver or name or size or mountpoint, line: %s", line)
+				break
+			}
+		}
+	}
+}
+
+// TestVolumeList tests the volume list with options: size and mountpoint.
+func (suite *PouchVolumeSuite) TestVolumeListOptions(c *check.C) {
+	pc, _, _, _ := runtime.Caller(0)
+	tmpname := strings.Split(runtime.FuncForPC(pc).Name(), ".")
+	var funcname string
+	for i := range tmpname {
+		funcname = tmpname[i]
+	}
+
+	volumeName := "volume_" + funcname
+	volumeName1 := "volume_" + funcname + "_1"
+	command.PouchRun("volume", "create", "--name", volumeName1, "-o", "size=1g").Assert(c, icmd.Success)
+	defer command.PouchRun("volume", "rm", volumeName1)
+
+	volumeName2 := "volume_" + funcname + "_2"
+	command.PouchRun("volume", "create", "--name", volumeName2, "-o", "size=2g").Assert(c, icmd.Success)
+	defer command.PouchRun("volume", "rm", volumeName2)
+
+	volumeName3 := "volume_" + funcname + "_3"
+	command.PouchRun("volume", "create", "--name", volumeName3, "-o", "size=3g").Assert(c, icmd.Success)
+	defer command.PouchRun("volume", "rm", volumeName3)
+
+	ret := command.PouchRun("volume", "list", "--size", "--mountpoint")
+	ret.Assert(c, icmd.Success)
+
+	for _, line := range strings.Split(ret.Stdout(), "\n") {
+		if strings.Contains(line, volumeName) {
+			if !strings.Contains(line, "local") ||
+				!strings.Contains(line, "g") ||
+				!strings.Contains(line, "/mnt/local") {
+				c.Errorf("list result have no driver or name or size or mountpoint, line: %s", line)
+				break
+			}
+		}
+	}
 }

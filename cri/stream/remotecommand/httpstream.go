@@ -1,6 +1,7 @@
 package remotecommand
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"github.com/alibaba/pouch/cri/stream/httpstream/spdy"
 
 	"github.com/sirupsen/logrus"
+	"k8s.io/apiserver/pkg/util/wsstream"
 )
 
 // Options contains details about which streams are required for
@@ -39,6 +41,9 @@ type context struct {
 	stdinStream  io.ReadCloser
 	stdoutStream io.WriteCloser
 	stderrStream io.WriteCloser
+	resizeStream io.ReadCloser
+	writeStatus  func(status *StatusError) error
+	tty          bool
 }
 
 // streamAndReply holds both a Stream and a channel that is closed when the stream's reply frame is
@@ -51,8 +56,13 @@ type streamAndReply struct {
 }
 
 func createStreams(w http.ResponseWriter, req *http.Request, opts *Options, supportedStreamProtocols []string, idleTimeout time.Duration, streamCreationTimeout time.Duration) (*context, bool) {
-	// TODO: WebSocketStream support.
-	ctx, ok := createHTTPStreamStreams(w, req, opts, supportedStreamProtocols, idleTimeout, streamCreationTimeout)
+	var ctx *context
+	var ok bool
+	if wsstream.IsWebSocketRequest(req) {
+		ctx, ok = createWebSocketStreams(w, req, opts, idleTimeout)
+	} else {
+		ctx, ok = createHTTPStreamStreams(w, req, opts, supportedStreamProtocols, idleTimeout, streamCreationTimeout)
+	}
 	if !ok {
 		return nil, false
 	}
@@ -157,6 +167,7 @@ WaitForStreams:
 			streamType := stream.Headers().Get(constant.StreamType)
 			switch streamType {
 			case constant.StreamTypeError:
+				ctx.writeStatus = v1WriteStatusFunc(stream)
 				go waitStreamReply(stream.replySent, replyChan, stop)
 			case constant.StreamTypeStdin:
 				ctx.stdinStream = stream
@@ -201,7 +212,7 @@ WaitForStreams:
 			streamType := stream.Headers().Get(constant.StreamType)
 			switch streamType {
 			case constant.StreamTypeError:
-				// ctx.writeStatus = v1WriteStatusFunc(stream)
+				ctx.writeStatus = v1WriteStatusFunc(stream)
 				go waitStreamReply(stream.replySent, replyChan, stop)
 			case constant.StreamTypeStdin:
 				ctx.stdinStream = stream
@@ -232,4 +243,27 @@ WaitForStreams:
 	}
 
 	return ctx, nil
+}
+
+func v1WriteStatusFunc(stream io.Writer) func(status *StatusError) error {
+	return func(status *StatusError) error {
+		if status.Status().Status == StatusSuccess {
+			return nil
+		}
+
+		_, err := stream.Write([]byte(status.Error()))
+		return err
+	}
+}
+
+func v4WriteStatusFunc(stream io.Writer) func(status *StatusError) error {
+	return func(status *StatusError) error {
+		bs, err := json.Marshal(status.Status())
+		if err != nil {
+			return err
+		}
+
+		_, err = stream.Write(bs)
+		return err
+	}
 }

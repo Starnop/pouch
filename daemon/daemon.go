@@ -16,6 +16,7 @@ import (
 	"github.com/alibaba/pouch/internal"
 	"github.com/alibaba/pouch/network/mode"
 	"github.com/alibaba/pouch/pkg/meta"
+	"github.com/alibaba/pouch/pkg/system"
 
 	"github.com/gorilla/mux"
 	"github.com/pkg/errors"
@@ -24,9 +25,9 @@ import (
 
 // Daemon refers to a daemon.
 type Daemon struct {
-	config          config.Config
+	config          *config.Config
 	containerStore  *meta.Store
-	containerd      *ctrd.Client
+	containerd      ctrd.APIClient
 	containerMgr    mgr.ContainerMgr
 	systemMgr       mgr.SystemMgr
 	imageMgr        mgr.ImageMgr
@@ -46,7 +47,7 @@ type router struct {
 }
 
 // NewDaemon constructs a brand new server.
-func NewDaemon(cfg config.Config) *Daemon {
+func NewDaemon(cfg *config.Config) *Daemon {
 	containerStore, err := meta.NewStore(meta.Config{
 		Driver:  "local",
 		BaseDir: path.Join(cfg.HomeDir, "containers"),
@@ -85,11 +86,7 @@ func loadSymbolByName(p *plugin.Plugin, name string) (plugin.Symbol, error) {
 	return s, nil
 }
 
-// Run starts daemon.
-func (d *Daemon) Run() error {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
+func (d *Daemon) loadPlugin() error {
 	var s plugin.Symbol
 	var err error
 
@@ -129,25 +126,37 @@ func (d *Daemon) Run() error {
 		}
 	}
 
-	imageMgr, err := internal.GenImageMgr(&d.config, d)
+	return nil
+}
+
+// Run starts daemon.
+func (d *Daemon) Run() error {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	if err := d.loadPlugin(); err != nil {
+		return err
+	}
+
+	imageMgr, err := internal.GenImageMgr(d.config, d)
 	if err != nil {
 		return err
 	}
 	d.imageMgr = imageMgr
 
-	systemMgr, err := internal.GenSystemMgr(&d.config, d)
+	systemMgr, err := internal.GenSystemMgr(d.config, d)
 	if err != nil {
 		return err
 	}
 	d.systemMgr = systemMgr
 
-	volumeMgr, err := internal.GenVolumeMgr(&d.config, d)
+	volumeMgr, err := internal.GenVolumeMgr(d.config, d)
 	if err != nil {
 		return err
 	}
 	d.volumeMgr = volumeMgr
 
-	networkMgr, err := internal.GenNetworkMgr(&d.config, d)
+	networkMgr, err := internal.GenNetworkMgr(d.config, d)
 	if err != nil {
 		return err
 	}
@@ -159,14 +168,7 @@ func (d *Daemon) Run() error {
 	}
 	d.containerMgr = containerMgr
 
-	criMgr, err := internal.GenCriMgr(d)
-	if err != nil {
-		return err
-	}
-	d.criMgr = criMgr
-
-	d.criService, err = cri.NewService(d.config, criMgr)
-	if err != nil {
+	if err := d.addSystemLabels(); err != nil {
 		return err
 	}
 
@@ -197,29 +199,17 @@ func (d *Daemon) Run() error {
 		close(httpServerCloseCh)
 	}()
 
-	grpcServerCloseCh := make(chan struct{})
-	go func() {
-		if err := d.criService.Serve(); err != nil {
-			logrus.Errorf("failed to start grpc server: %v", err)
-		}
-		close(grpcServerCloseCh)
-	}()
+	criStopCh := make(chan error)
+	go d.RunCriService(criStopCh)
 
-	streamServerCloseCh := make(chan struct{})
-	go func() {
-		if d.criMgr.StreamServerStart(); err != nil {
-			logrus.Errorf("failed to start stream server: %v", err)
-		}
-		close(streamServerCloseCh)
-	}()
+	err = <-criStopCh
+	if err != nil {
+		return err
+	}
 
-	// Stop pouchd if both server stopped.
+	// Stop pouchd if the server stopped
 	<-httpServerCloseCh
 	logrus.Infof("HTTP server stopped")
-	<-grpcServerCloseCh
-	logrus.Infof("GRPC server stopped")
-	<-streamServerCloseCh
-	logrus.Infof("Stream server stopped")
 
 	return nil
 }
@@ -231,7 +221,7 @@ func (d *Daemon) Shutdown() error {
 
 // Config gets config of daemon.
 func (d *Daemon) Config() *config.Config {
-	return &d.config
+	return d.config
 }
 
 // CtrMgr gets manager of container.
@@ -255,7 +245,7 @@ func (d *Daemon) NetMgr() mgr.NetworkMgr {
 }
 
 // Containerd gets containerd client.
-func (d *Daemon) Containerd() *ctrd.Client {
+func (d *Daemon) Containerd() ctrd.APIClient {
 	return d.containerd
 }
 
@@ -282,4 +272,74 @@ func (d *Daemon) ShutdownPlugin() error {
 		}
 	}
 	return nil
+}
+
+// addSystemLabels adds some system labels to daemon's config.
+// Currently, pouchd add node ip and serial number to pouchd with the format:
+// node_ip=192.168.0.1
+// SN=xxxxx
+func (d *Daemon) addSystemLabels() error {
+	d.config.Lock()
+	defer d.config.Unlock()
+	if d.config.Labels == nil {
+		d.config.Labels = make([]string, 0)
+	}
+	// get node IP
+	nodeIP := system.GetNodeIP()
+	d.config.Labels = append(d.config.Labels, fmt.Sprintf("node_ip=%s", nodeIP))
+
+	// get serial number
+	serialNo := system.GetSerialNumber()
+	d.config.Labels = append(d.config.Labels, fmt.Sprintf("SN=%s", serialNo))
+
+	return nil
+}
+
+// RunCriService start cri service if pouchd is specified with --enable-cri.
+func (d *Daemon) RunCriService(stopCh chan error) {
+	var err error
+
+	defer func() {
+		stopCh <- err
+		close(stopCh)
+	}()
+
+	if !d.config.IsCriEnabled {
+		return
+	}
+
+	criMgr, err := internal.GenCriMgr(d)
+	if err != nil {
+		return
+	}
+	d.criMgr = criMgr
+
+	d.criService, err = cri.NewService(d.config, criMgr)
+	if err != nil {
+		return
+	}
+
+	grpcServerCloseCh := make(chan struct{})
+	go func() {
+		if err := d.criService.Serve(); err != nil {
+			logrus.Errorf("failed to start grpc server: %v", err)
+		}
+		close(grpcServerCloseCh)
+	}()
+
+	streamServerCloseCh := make(chan struct{})
+	go func() {
+		if err := d.criMgr.StreamServerStart(); err != nil {
+			logrus.Errorf("failed to start stream server: %v", err)
+		}
+		close(streamServerCloseCh)
+	}()
+
+	<-streamServerCloseCh
+	logrus.Infof("CRI Stream server stopped")
+	<-grpcServerCloseCh
+	logrus.Infof("CRI GRPC server stopped")
+
+	logrus.Infof("CRI service stopped")
+	return
 }
