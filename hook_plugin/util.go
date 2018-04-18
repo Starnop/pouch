@@ -97,8 +97,8 @@ func prepare_network(requestedIP, defaultRoute, mask, nic string, networkMode st
 	}
 
 	if nic == "bond0" || nic == "docker0" {
-		nwName = "docker0_" + defaultRoute
-		nwIf = "docker0"
+		nwName = "p0_" + defaultRoute
+		nwIf = "p0"
 	} else if networkMode == "aisnet" {
 		nwName = "aisnet_" + defaultRoute
 	} else {
@@ -109,6 +109,7 @@ func prepare_network(requestedIP, defaultRoute, mask, nic string, networkMode st
 	}
 	fmt.Printf("create container network params %s %s %s %s %s\n", requestedIP, defaultRoute, mask, nic, networkMode)
 	if networkMode == "default" || "bridge" == networkMode || networkMode == nwName {
+		//create network if not exist
 		networkLock.Lock()
 		defer networkLock.Unlock()
 		nwArr, err := getAllNetwork()
