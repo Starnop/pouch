@@ -125,7 +125,7 @@ func (c ContPlugin) PreCreate(in io.ReadCloser) (io.ReadCloser, error) {
 	}
 
 	// common vm use rich container which introduced by pouch
-	if getEnv(env, "ali_run_mode") == "vm" {
+	if getEnv(env, "ali_run_mode") == "vm" || getEnv(env, "ali_run_mode") == "common_vm" {
 		// change common_vm to vm
 		for i, line := range createConfig.Env {
 			if line == "ali_run_mode=common_vm" {
