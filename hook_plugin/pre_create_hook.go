@@ -99,41 +99,43 @@ func (c ContPlugin) PreCreate(in io.ReadCloser) (io.ReadCloser, error) {
 	if ("common_vm" == mode || "vm" == mode) && createConfig.User != "root" {
 		fmt.Printf("in common_vm mode, use root user to start container.\n")
 		createConfig.User = "root"
-		for i, line := range createConfig.Env {
-			if line == "ali_run_mode=common_vm" {
-				createConfig.Env[i] = "ali_run_mode=vm"
+	}
+
+	// setup disk quota
+	if diskQuota := createConfig.Labels["DiskQuota"]; diskQuota != "" &&
+		len(createConfig.DiskQuota) == 0 {
+		if createConfig.DiskQuota == nil {
+			createConfig.DiskQuota = make(map[string]string)
+		}
+		for _, kv := range strings.Split(diskQuota, ";") {
+			kv = strings.TrimSpace(kv)
+			if kv == "" {
+				continue
 			}
+			arr := strings.SplitN(kv, "=", 2)
+			var k, v string
+			if len(arr) == 2 {
+				k, v = arr[0], arr[1]
+			} else {
+				k = ".*"
+				v = arr[0]
+			}
+			createConfig.DiskQuota[k] = v
 		}
 	}
 
 	// common vm use rich container which introduced by pouch
 	if getEnv(env, "ali_run_mode") == "vm" {
+		// change common_vm to vm
+		for i, line := range createConfig.Env {
+			if line == "ali_run_mode=common_vm" {
+				createConfig.Env[i] = "ali_run_mode=vm"
+			}
+		}
+
 		// convert label to env
 		for k, v := range createConfig.Labels {
 			createConfig.Env = append(createConfig.Env, fmt.Sprintf("%s=%s", escapseLableToEnvName(k), v))
-		}
-
-		// setup disk quota
-		if diskQuota := createConfig.Labels["DiskQuota"]; diskQuota != "" &&
-			len(createConfig.DiskQuota) == 0 {
-			if createConfig.DiskQuota == nil {
-				createConfig.DiskQuota = make(map[string]string)
-			}
-			for _, kv := range strings.Split(diskQuota, ";") {
-				kv = strings.TrimSpace(kv)
-				if kv == "" {
-					continue
-				}
-				arr := strings.SplitN(kv, "=", 2)
-				var k, v string
-				if len(arr) == 2 {
-					k, v = arr[0], arr[1]
-				} else {
-					k = ".*"
-					v = arr[0]
-				}
-				createConfig.DiskQuota[k] = v
-			}
 		}
 
 		// generate quota id as needed
