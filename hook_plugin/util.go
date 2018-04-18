@@ -65,7 +65,10 @@ func getEnv(env []string, key string) string {
 	for _, pair := range env {
 		parts := strings.SplitN(pair, "=", 2)
 		if parts[0] == key {
-			return parts[1]
+			if len(parts) == 2 {
+				return parts[1]
+			}
+			return ""
 		}
 	}
 	return ""
