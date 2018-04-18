@@ -32,7 +32,7 @@ func (c ContPlugin) PreCreate(in io.ReadCloser) (io.ReadCloser, error) {
 		createConfig.HostConfig = &HostConfig{}
 	}
 	requestedIP := ""
-	if createConfig.HostConfig.NetworkMode == "default" {
+	if createConfig.HostConfig.NetworkMode == "default" || createConfig.HostConfig.NetworkMode == "" {
 		createConfig.HostConfig.NetworkMode = "bridge"
 	}
 	networkMode := createConfig.HostConfig.NetworkMode
