@@ -329,6 +329,10 @@ func (s *Server) getContainer(ctx context.Context, rw http.ResponseWriter, req *
 		},
 	}
 
+	if strings.Contains(GetTlsCommonName(ctx), "sigma") && "ali" == GetTlsIssuer(ctx) {
+		container.Name = fmt.Sprintf("/%s", container.Name)
+	}
+
 	if meta.NetworkSettings != nil {
 		container.NetworkSettings = &types.NetworkSettings{
 			Networks: meta.NetworkSettings.Networks,

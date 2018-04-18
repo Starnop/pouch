@@ -137,6 +137,8 @@ func filter(handler handler, s *Server) http.HandlerFunc {
 		if req.TLS != nil && len(req.TLS.PeerCertificates) > 0 {
 			issuer := req.TLS.PeerCertificates[0].Issuer.CommonName
 			clientName := req.TLS.PeerCertificates[0].Subject.CommonName
+			ctx = SetTlsIssuer(ctx, issuer)
+			ctx = SetTlsCommonName(ctx, clientName)
 			clientInfo = fmt.Sprintf("%s %s %s", clientInfo, issuer, clientName)
 		}
 		if req.Method != http.MethodGet {
@@ -153,6 +155,34 @@ func filter(handler handler, s *Server) http.HandlerFunc {
 		// Handle error if request handling fails.
 		HandleErrorResponse(w, err)
 	}
+}
+
+// SetTlsIssuer set issuer name of tls to context
+func SetTlsIssuer(ctx context.Context, issuer string) context.Context {
+	return context.WithValue(ctx, "pouch.server.tls.issuer", issuer)
+}
+
+// SetTlsIssuer fetch issuer name from context
+func GetTlsIssuer(ctx context.Context) string {
+	issuer := ctx.Value("pouch.server.tls.issuer")
+	if issuer == nil {
+		return ""
+	}
+	return issuer.(string)
+}
+
+// SetTlsCommonName set common name of tls to context
+func SetTlsCommonName(ctx context.Context, cn string) context.Context {
+	return context.WithValue(ctx, "pouch.server.tls.cn", cn)
+}
+
+// GetTlsCommonName fetch common name from context
+func GetTlsCommonName(ctx context.Context) string {
+	issuer := ctx.Value("pouch.server.tls.cn")
+	if issuer == nil {
+		return ""
+	}
+	return issuer.(string)
 }
 
 // EncodeResponse encodes response in json.
