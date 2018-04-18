@@ -28,6 +28,7 @@ func (s *Server) version(ctx context.Context, rw http.ResponseWriter, req *http.
 	if err != nil {
 		return err
 	}
+	version.Version = "1.12.6"
 	return EncodeResponse(rw, http.StatusOK, version)
 }
 
