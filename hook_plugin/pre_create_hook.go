@@ -119,7 +119,11 @@ func (c ContPlugin) PreCreate(in io.ReadCloser) (io.ReadCloser, error) {
 			if createConfig.DiskQuota == nil {
 				createConfig.DiskQuota = make(map[string]string)
 			}
-			for _, kv := range strings.Split(diskQuota, ",") {
+			for _, kv := range strings.Split(diskQuota, ";") {
+				kv = strings.TrimSpace(kv)
+				if kv == "" {
+					continue
+				}
 				arr := strings.SplitN(kv, "=", 2)
 				var k, v string
 				if len(arr) == 2 {
@@ -135,9 +139,15 @@ func (c ContPlugin) PreCreate(in io.ReadCloser) (io.ReadCloser, error) {
 		// generate quota id as needed
 		if createConfig.Labels["AutoQuotaId"] == "true" {
 			if createConfig.QuotaID == "" || createConfig.QuotaID == "0" {
-				createConfig.QuotaID = "-1"
+				qid := createConfig.Labels["QuotaId"]
+				if qid != "" && qid != "0" {
+					createConfig.QuotaID = qid
+				} else {
+					createConfig.QuotaID = "-1"
+				}
 			}
 		}
+
 		// set hostname to env
 		if getEnv(env, "HOSTNAME") == "" && createConfig.Hostname != "" {
 			found := false
