@@ -1476,14 +1476,16 @@ func (mgr *ContainerManager) parseBinds(ctx context.Context, meta *ContainerMeta
 				Propagation: oldMountPoint.Propagation,
 			}
 
-			if _, exist := meta.Config.Volumes[oldMountPoint.Name]; !exist {
-				mp.Name = oldMountPoint.Name
-				mp.Source, mp.Driver, err = mgr.bindVolume(ctx, oldMountPoint.Name, meta)
-				if err != nil {
-					logrus.Errorf("failed to bind volume: %s, err: %v", oldMountPoint.Name, err)
-					return errors.Wrap(err, "failed to bind volume")
+			if mp.Name != "" {
+				if _, exist := meta.Config.Volumes[oldMountPoint.Name]; !exist {
+					mp.Name = oldMountPoint.Name
+					mp.Source, mp.Driver, err = mgr.bindVolume(ctx, oldMountPoint.Name, meta)
+					if err != nil {
+						logrus.Errorf("failed to bind volume: %s, err: %v", oldMountPoint.Name, err)
+						return errors.Wrap(err, "failed to bind volume")
+					}
+					meta.Config.Volumes[mp.Name] = oldMountPoint.Destination
 				}
-				meta.Config.Volumes[mp.Name] = oldMountPoint.Destination
 			}
 
 			err = opts.ParseBindMode(mp, mode)
