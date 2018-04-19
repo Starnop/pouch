@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/sirupsen/logrus"
 )
 
 type ContPlugin int
@@ -26,7 +28,7 @@ var (
 )
 
 func (d DPlugin) PreStartHook() error {
-	fmt.Println("pre-start hook in daemon is called")
+	logrus.Infof("pre-start hook in daemon is called")
 	configMap := make(map[string]interface{}, 8)
 	homeDir := ""
 	if _, ex := os.Stat("/etc/pouch/config.json"); ex == nil {
