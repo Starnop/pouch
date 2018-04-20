@@ -1452,6 +1452,39 @@ func (mgr *ContainerManager) parseBinds(ctx context.Context, meta *ContainerMeta
 		}
 	}()
 
+	// parse volumes from image
+	image, err := mgr.ImageMgr.GetImage(ctx, meta.Image)
+	if err != nil {
+		return errors.Wrapf(err, "failed to get image: %s", meta.Image)
+	}
+	for dest := range image.Config.Volumes {
+		name := randomid.Generate()
+		if _, exist := meta.Config.Volumes[name]; exist {
+			continue
+		}
+
+		mp := new(types.MountPoint)
+		mp.Name = name
+		mp.Named = true
+		mp.Destination = dest
+
+		mp.Source, mp.Driver, err = mgr.bindVolume(ctx, mp.Name, meta)
+		if err != nil {
+			logrus.Errorf("failed to bind volume: %s, err: %v", mp.Name, err)
+			return errors.Wrap(err, "failed to bind volume")
+		}
+
+		err = opts.ParseBindMode(mp, "")
+		if err != nil {
+			logrus.Errorf("failed to parse mode, err: %v", err)
+			return err
+		}
+
+		meta.Config.Volumes[mp.Name] = mp.Destination
+		meta.Mounts = append(meta.Mounts, mp)
+	}
+
+	// parse volumes from other containers
 	for _, v := range meta.HostConfig.VolumesFrom {
 		var containerID, mode string
 		containerID, mode, err = opts.ParseVolumesFrom(v)
@@ -1467,7 +1500,6 @@ func (mgr *ContainerManager) parseBinds(ctx context.Context, meta *ContainerMeta
 
 		for _, oldMountPoint := range oldMeta.Mounts {
 			mp := &types.MountPoint{
-				Name:        oldMountPoint.Name,
 				Source:      oldMountPoint.Source,
 				Destination: oldMountPoint.Destination,
 				Driver:      oldMountPoint.Driver,
@@ -1476,16 +1508,14 @@ func (mgr *ContainerManager) parseBinds(ctx context.Context, meta *ContainerMeta
 				Propagation: oldMountPoint.Propagation,
 			}
 
-			if mp.Name != "" {
-				if _, exist := meta.Config.Volumes[oldMountPoint.Name]; !exist {
-					mp.Name = oldMountPoint.Name
-					mp.Source, mp.Driver, err = mgr.bindVolume(ctx, oldMountPoint.Name, meta)
-					if err != nil {
-						logrus.Errorf("failed to bind volume: %s, err: %v", oldMountPoint.Name, err)
-						return errors.Wrap(err, "failed to bind volume")
-					}
-					meta.Config.Volumes[mp.Name] = oldMountPoint.Destination
+			if _, exist := meta.Config.Volumes[oldMountPoint.Name]; len(oldMountPoint.Name) > 0 && !exist {
+				mp.Name = oldMountPoint.Name
+				mp.Source, mp.Driver, err = mgr.bindVolume(ctx, oldMountPoint.Name, meta)
+				if err != nil {
+					logrus.Errorf("failed to bind volume: %s, err: %v", oldMountPoint.Name, err)
+					return errors.Wrap(err, "failed to bind volume")
 				}
+				meta.Config.Volumes[mp.Name] = oldMountPoint.Destination
 			}
 
 			err = opts.ParseBindMode(mp, mode)
@@ -1585,6 +1615,9 @@ func (mgr *ContainerManager) parseBinds(ctx context.Context, meta *ContainerMeta
 
 func (mgr *ContainerManager) setMountPointDiskQuota(ctx context.Context, c *ContainerMeta) error {
 	if c.Config.DiskQuota == nil {
+		if c.Config.QuotaID != "" && c.Config.QuotaID != "0" {
+			return fmt.Errorf("invalid argument, set quota-id without disk-quota")
+		}
 		return nil
 	}
 
@@ -1633,12 +1666,27 @@ func (mgr *ContainerManager) setMountPointDiskQuota(ctx context.Context, c *Cont
 
 	for _, mp := range c.Mounts {
 		// skip volume mount or replace mode mount
-		if mp.Name != "" || mp.Replace != "" || mp.Source == "" || mp.Destination == "" {
+		if mp.Replace != "" || mp.Source == "" || mp.Destination == "" {
+			logrus.Debugf("skip volume mount or replace mode mount")
 			continue
+		}
+
+		if mp.Name != "" {
+			v, err := mgr.VolumeMgr.Get(ctx, mp.Name)
+			if err != nil {
+				logrus.Warnf("failed to get volume: %s", mp.Name)
+				continue
+			}
+
+			if v.Size() != "" {
+				logrus.Debugf("skip volume: %s with size", mp.Name)
+				continue
+			}
 		}
 
 		// skip non-directory path.
 		if fd, err := os.Stat(mp.Source); err != nil || !fd.IsDir() {
+			logrus.Debugf("skip non-directory path: %s", mp.Source)
 			continue
 		}
 
