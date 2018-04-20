@@ -50,25 +50,25 @@ func (d DPlugin) PreStartHook() error {
 	if e != nil {
 		return fmt.Errorf("daemon prestart execute error. %s %v", string(b), e)
 	} else {
-		fmt.Printf("daemon_prestart output %s\n", string(b))
+		logrus.Infof("daemon_prestart output %s", string(b))
 	}
 	go activePlugins()
 	return nil
 }
 
 func (d DPlugin) PreStopHook() error {
-	fmt.Println("pre-stop hook in daemon is called")
+	logrus.Infof("pre-stop hook in daemon is called")
 	b, e := exec.Command("/opt/ali-iaas/pouch/bin/daemon_prestop.sh").CombinedOutput()
 	if e != nil {
 		return e
 	} else {
-		fmt.Printf("daemon_prestop output %s\n", string(b))
+		logrus.Infof("daemon_prestop output %s", string(b))
 	}
 	return nil
 }
 
 func (c ContPlugin) PreStart(interface{}) ([]int, [][]string, error) {
-	fmt.Println("pre start method called")
+	logrus.Infof("pre start method called")
 	//copy file into the ns, put entrypoint in container. like the function of pouch_container_create.sh in old version
 	return []int{-100}, [][]string{{"/opt/ali-iaas/pouch/bin/prestart_hook"}}, nil
 }

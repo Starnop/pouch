@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/sirupsen/logrus"
 )
 
 var pluginLock sync.Mutex
@@ -72,9 +74,9 @@ func activePluginsOnce() {
 				}
 			}
 			if e = activeOne.Start(); e != nil {
-				fmt.Printf("start plugins error %s, %v\n", one, e)
+				logrus.Errorf("start plugins error %s, %v", one, e)
 			} else {
-				fmt.Printf("start plugin success. %s\n", one)
+				logrus.Infof("start plugin success. %s", one)
 				go func() {
 					activeOne.Wait()
 				}()
