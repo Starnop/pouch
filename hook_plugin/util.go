@@ -153,21 +153,20 @@ func prepare_network(requestedIP, defaultRoute, mask, nic string, networkMode st
 				return "", err
 			}
 		}
-
-		if defaultObj, exist := EndpointsConfig[nwName]; !exist || defaultObj.IPAMConfig == nil {
-			EndpointsConfig[nwName] = &EndpointSettings{IPAMConfig: &EndpointIPAMConfig{}}
-		}
-		if EndpointsConfig[nwName].IPAMConfig.IPV4Address != requestedIP {
-			EndpointsConfig[nwName].IPAMConfig.IPV4Address = requestedIP
-			//EndpointsConfig[nwName].Time = time.Now().Unix() - 1
-			//EndpointsConfig[nwName].SkipResolver = true
-		}
-
-		logrus.Infof("create container network params from endpoint config %s %s %s %s %s", EndpointsConfig[nwName].IPAMConfig.IPV4Address, defaultRoute, mask, nic, nwName)
-
-		return nwName, nil
+	} else {
+		nwName = networkMode
 	}
-	return networkMode, nil
+
+	if defaultObj, exist := EndpointsConfig[nwName]; !exist || defaultObj.IPAMConfig == nil {
+		EndpointsConfig[nwName] = &EndpointSettings{IPAMConfig: &EndpointIPAMConfig{}}
+	}
+	if EndpointsConfig[nwName].IPAMConfig.IPV4Address != requestedIP {
+		EndpointsConfig[nwName].IPAMConfig.IPV4Address = requestedIP
+	}
+
+	logrus.Infof("create container network params from endpoint config %s %s %s %s %s", EndpointsConfig[nwName].IPAMConfig.IPV4Address, defaultRoute, mask, nic, nwName)
+
+	return nwName, nil
 }
 
 func getAllNetwork() (nr *NetworkListResp, err error) {
