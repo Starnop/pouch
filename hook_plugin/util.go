@@ -14,6 +14,7 @@ import (
 	"time"
 
 	. "github.com/alibaba/pouch/apis/types"
+	"github.com/sirupsen/logrus"
 )
 
 var (
@@ -37,9 +38,9 @@ func getNetworkMode(m map[string]interface{}) (nm string, err error) {
 		if nm, ok = networkMode.(string); ok {
 			return
 		}
-		return "", fmt.Errorf("%v of networkMode is not a string\n", networkMode)
+		return "", fmt.Errorf("%v of networkMode is not a string", networkMode)
 	default:
-		return "", fmt.Errorf("HostConfig format error in body. %q\n", hostConfig)
+		return "", fmt.Errorf("HostConfig format error in body. %q", hostConfig)
 	}
 }
 
@@ -51,14 +52,14 @@ func getAllEnv(m map[string]interface{}) (arr []string, err error) {
 		ret := make([]string, len(r))
 		for i, line := range r {
 			if ret[i], ok = line.(string); !ok {
-				return arr, fmt.Errorf("%v in env is not a string\n", line)
+				return arr, fmt.Errorf("%v in env is not a string", line)
 			}
 		}
 		return ret, nil
 	case []string:
 		return r, nil
 	default:
-		return arr, fmt.Errorf("env format error in body. %q\n", env)
+		return arr, fmt.Errorf("env format error in body. %q", env)
 	}
 }
 
@@ -111,7 +112,7 @@ func prepare_network(requestedIP, defaultRoute, mask, nic string, networkMode st
 	if getEnv(rawEnv, "OverlayNetwork") == "true" {
 		nwName = nwName + ".overlay"
 	}
-	fmt.Printf("create container network params %s %s %s %s %s\n", requestedIP, defaultRoute, mask, nic, networkMode)
+	logrus.Infof("create container network params %s %s %s %s %s", requestedIP, defaultRoute, mask, nic, networkMode)
 	if networkMode == "default" || "bridge" == networkMode || networkMode == nwName {
 		//create network if not exist
 		networkLock.Lock()
@@ -162,10 +163,11 @@ func prepare_network(requestedIP, defaultRoute, mask, nic string, networkMode st
 			//EndpointsConfig[nwName].SkipResolver = true
 		}
 
-		fmt.Printf("create container network params from endpoint config %s %s %s %s %s\n", EndpointsConfig[nwName].IPAMConfig.IPV4Address, defaultRoute, mask, nic, nwName)
+		logrus.Infof("create container network params from endpoint config %s %s %s %s %s", EndpointsConfig[nwName].IPAMConfig.IPV4Address, defaultRoute, mask, nic, nwName)
 
+		return nwName, nil
 	}
-	return nwName, nil
+	return networkMode, nil
 }
 
 func getAllNetwork() (nr *NetworkListResp, err error) {
@@ -197,7 +199,7 @@ func CreateNetwork(c *NetworkCreateConfig) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("create network return %s\n", string(b))
+	logrus.Infof("create network return %s", string(b))
 	if strings.Contains(string(b), "failed") {
 		return fmt.Errorf(string(b))
 	}
@@ -219,7 +221,7 @@ func mustRequestedIP() bool {
 
 func setupEnv() {
 	if b, err := ioutil.ReadFile("/etc/sysconfig/pouch"); err != nil {
-		fmt.Printf("read config file error %v\n", err)
+		logrus.Infof("read config file error %v", err)
 	} else {
 		for _, line := range bytes.Split(b, []byte{'\n'}) {
 			if bytes.Contains(line, []byte("--set-env")) && !bytes.HasPrefix(line, []byte("#")) {

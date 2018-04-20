@@ -12,15 +12,16 @@ import (
 	"strings"
 
 	. "github.com/alibaba/pouch/apis/types"
+	"github.com/sirupsen/logrus"
 )
 
 func (c ContPlugin) PreCreate(in io.ReadCloser) (io.ReadCloser, error) {
-	fmt.Println("pre create method called")
+	logrus.Infof("pre create method called")
 	inputBuffer, err := ioutil.ReadAll(in)
 	if err != nil {
 		return nil, err
 	}
-	fmt.Printf("create container with body %s\n", string(inputBuffer))
+	logrus.Infof("create container with body %s", string(inputBuffer))
 
 	//create network if exist
 	var createConfig ContainerCreateConfig
@@ -76,11 +77,11 @@ func (c ContPlugin) PreCreate(in io.ReadCloser) (io.ReadCloser, error) {
 	if getEnv(createConfig.Env, "ali_admin_uid") == "0" && requestedIP != "" {
 		if b, ex := exec.Command("/opt/ali-iaas/pouch/bin/get_admin_uid.sh",
 			requestedIP).CombinedOutput(); ex != nil {
-			fmt.Printf("get admin uid error, ip is %s, error is %v\n", requestedIP, ex)
+			logrus.Errorf("get admin uid error, ip is %s, error is %v", requestedIP, ex)
 			return nil, ex
 		} else {
 			if uid, ex := strconv.Atoi(strings.TrimSpace(string(b))); ex != nil {
-				fmt.Printf("get admin uid error, ip is %s, error is %v\n", requestedIP, ex)
+				logrus.Errorf("get admin uid error, ip is %s, error is %v", requestedIP, ex)
 				return nil, ex
 			} else {
 				for i, oneEnv := range createConfig.Env {
@@ -97,7 +98,7 @@ func (c ContPlugin) PreCreate(in io.ReadCloser) (io.ReadCloser, error) {
 	// common vm must run as root
 	mode := getEnv(createConfig.Env, "ali_run_mode")
 	if ("common_vm" == mode || "vm" == mode) && createConfig.User != "root" {
-		fmt.Printf("in common_vm mode, use root user to start container.\n")
+		logrus.Infof("in common_vm mode, use root user to start container.")
 		createConfig.User = "root"
 	}
 
@@ -171,7 +172,7 @@ func (c ContPlugin) PreCreate(in io.ReadCloser) (io.ReadCloser, error) {
 	// marshal it as stream and return to the caller
 	var out bytes.Buffer
 	err = json.NewEncoder(&out).Encode(createConfig)
-	fmt.Printf("after process create container body is %s\n", string(out.Bytes()))
+	logrus.Infof("after process create container body is %s", string(out.Bytes()))
 
 	return ioutil.NopCloser(&out), err
 }
