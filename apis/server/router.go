@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/pprof"
+	"strings"
 	"time"
 
 	"github.com/alibaba/pouch/apis/types"
@@ -148,6 +149,13 @@ func filter(handler handler, s *Server) http.HandlerFunc {
 			logrus.Infof("Calling %s %s, client %s", req.Method, req.URL.RequestURI(), clientInfo)
 		} else {
 			logrus.Debugf("Calling %s %s, client %s", req.Method, req.URL.RequestURI(), clientInfo)
+		}
+
+		//trim the heading slash in parameter name
+		name := mux.Vars(req)["name"]
+		if name != "" && utils.IsSigma(ctx) && strings.HasPrefix(name, "/") {
+			name = strings.TrimPrefix(name, "/")
+			mux.Vars(req)["name"] = name
 		}
 
 		// Start to handle request.
