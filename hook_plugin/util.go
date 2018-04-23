@@ -121,10 +121,11 @@ func prepare_network(requestedIP, defaultRoute, mask, nic string, networkMode st
 		if err != nil {
 			return "", err
 		}
-		var nw *NetworkInfo
-		for _, one := range nwArr.Networks {
-			if one != nil && one.Name == nwName {
-				nw = one
+
+		var nw *NetworkResource
+		for _, one := range nwArr {
+			if one.Name == nwName {
+				nw = &one
 				break
 			}
 		}
@@ -169,14 +170,14 @@ func prepare_network(requestedIP, defaultRoute, mask, nic string, networkMode st
 	return nwName, nil
 }
 
-func getAllNetwork() (nr *NetworkListResp, err error) {
+func getAllNetwork() (nr []NetworkResource, err error) {
 	resp, err := pouchClient.Get("http://127.0.0.1/v1.24/networks")
 	if err != nil {
 		return
 	}
 	defer resp.Body.Close()
-	nr = &NetworkListResp{}
-	if err = json.NewDecoder(resp.Body).Decode(nr); err != nil {
+	var respNetworks []NetworkResource
+	if err = json.NewDecoder(resp.Body).Decode(&respNetworks); err != nil {
 		return
 	}
 	return
