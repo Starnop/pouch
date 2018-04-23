@@ -169,6 +169,12 @@ func (c ContPlugin) PreCreate(in io.ReadCloser) (io.ReadCloser, error) {
 			"SYS_PTRACE", "SYS_PACCT", "NET_ADMIN", "SYS_ADMIN")
 	}
 
+	if len(createConfig.HostConfig.VolumesFrom) > 0 {
+		for i, one := range createConfig.HostConfig.VolumesFrom {
+			createConfig.HostConfig.VolumesFrom[i] = strings.TrimPrefix(one, "/")
+		}
+	}
+
 	// marshal it as stream and return to the caller
 	var out bytes.Buffer
 	err = json.NewEncoder(&out).Encode(createConfig)
