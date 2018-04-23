@@ -3,6 +3,7 @@ package server
 import (
 	"crypto/tls"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -66,7 +67,11 @@ func (s *Server) Start() (err error) {
 		s.listeners = append(s.listeners, l)
 
 		go func(l net.Listener) {
-			errCh <- http.Serve(l, router)
+			s := &http.Server{
+				Handler:  router,
+				ErrorLog: log.New(stdFilterLogWriter, "", 0),
+			}
+			errCh <- s.Serve(l)
 		}(l)
 	}
 
