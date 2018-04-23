@@ -43,9 +43,9 @@ func (s *Server) listNetwork(ctx context.Context, rw http.ResponseWriter, req *h
 		return err
 	}
 
-	respNetworks := types.NetworkListResp{Networks: []*types.NetworkInfo{}, Warnings: nil}
+	respNetworks := []types.NetworkResource{}
 	for _, net := range networks {
-		respNetworks.Networks = append(respNetworks.Networks, &types.NetworkInfo{
+		respNetworks = append(respNetworks, types.NetworkResource{
 			Name:   net.Name,
 			ID:     net.ID,
 			Driver: net.Type,
@@ -75,6 +75,22 @@ func (s *Server) deleteNetwork(ctx context.Context, rw http.ResponseWriter, req 
 	}
 	rw.WriteHeader(http.StatusNoContent)
 	return nil
+}
+
+func (s *Server) disconnectNetwork(ctx context.Context, rw http.ResponseWriter, req *http.Request) error {
+	network := &types.NetworkDisconnect{}
+	// decode request body
+	if err := json.NewDecoder(req.Body).Decode(network); err != nil {
+		return httputils.NewHTTPError(err, http.StatusBadRequest)
+	}
+	// validate request body
+	if err := network.Validate(strfmt.NewFormats()); err != nil {
+		return httputils.NewHTTPError(err, http.StatusBadRequest)
+	}
+
+	name := mux.Vars(req)["name"]
+
+	return s.ContainerMgr.DisconnectContainerFromNetwork(ctx, network.Container, name, network.Force)
 }
 
 func buildNetworkInspectResp(n *networktypes.Network) *types.NetworkInspectResp {
