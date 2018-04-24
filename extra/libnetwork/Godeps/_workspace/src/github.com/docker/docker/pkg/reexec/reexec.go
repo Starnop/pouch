@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"time"
 )
 
 var registeredInitializers = make(map[string]func())
@@ -23,6 +24,9 @@ func Register(name string, initializer func()) {
 func Init() bool {
 	initializer, exists := registeredInitializers[os.Args[0]]
 	if exists {
+		if _, ex := os.Stat("/etc/debug_reexec"); ex == nil {
+			time.Sleep(time.Minute)
+		}
 		initializer()
 
 		return true
