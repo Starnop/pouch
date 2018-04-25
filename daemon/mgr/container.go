@@ -179,7 +179,7 @@ func (mgr *ContainerManager) Restore(ctx context.Context) error {
 		}
 
 		// recover the running container.
-		io, err := mgr.openContainerIO(containerMeta.ID, nil)
+		io, err := mgr.openContainerIO(containerMeta.ID, containerMeta.Config.OpenStdin)
 		if err != nil {
 			logrus.Errorf("failed to recover container: %s,  %v", containerMeta.ID, err)
 		}
@@ -649,47 +649,43 @@ func (mgr *ContainerManager) createContainerdContainer(ctx context.Context, c *C
 	}
 
 	// open container's stdio.
-	io, err := mgr.openContainerIO(c.ID(), nil)
+	io, err := mgr.openContainerIO(c.ID(), c.meta.Config.OpenStdin)
 	if err != nil {
 		return errors.Wrap(err, "failed to open io")
 	}
-	if io.Stdin.OpenStdin() {
+	if io.Stdin != nil && io.Stdin.OpenStdin() {
 		s.Process.Terminal = true
 	}
 
-	err = mgr.Client.CreateContainer(ctx, &ctrd.Container{
+	if err := mgr.Client.CreateContainer(ctx, &ctrd.Container{
 		ID:      c.ID(),
 		Image:   c.Image(),
 		Runtime: c.meta.HostConfig.Runtime,
 		Spec:    s,
 		IO:      io,
-	})
-	if err == nil {
-		c.meta.State.Status = types.StatusRunning
-		c.meta.State.StartedAt = time.Now().UTC().Format(utils.TimeLayout)
-		pid, err := mgr.Client.ContainerPID(ctx, c.ID())
-		if err != nil {
-			return errors.Wrapf(err, "failed to get PID of container: %s", c.ID())
-		}
-		c.meta.State.Pid = int64(pid)
-		c.meta.State.ExitCode = 0
+	}); err != nil {
+		logrus.Errorf("failed to create new containerd container: %s", err.Error())
 
-		// set Snapshot MergedDir
-		c.meta.Snapshotter.Data["MergedDir"] = c.meta.BaseFS
-	} else {
-		c.meta.State.FinishedAt = time.Now().UTC().Format(utils.TimeLayout)
-		c.meta.State.Error = err.Error()
-		c.meta.State.Pid = 0
-		//TODO: make exit code more correct.
-		c.meta.State.ExitCode = 127
-
-		// release io
-		io.Close()
-		mgr.IOs.Remove(c.ID())
+		// TODO(ziren): markStoppedAndRelease may failed
+		// we should clean resources of container when start failed
+		_ = mgr.markStoppedAndRelease(c, nil)
+		return err
 	}
 
-	c.Write(mgr.Store)
-	return err
+	// Create containerd container success.
+	c.meta.State.Status = types.StatusRunning
+	c.meta.State.StartedAt = time.Now().UTC().Format(utils.TimeLayout)
+	pid, err := mgr.Client.ContainerPID(ctx, c.ID())
+	if err != nil {
+		return errors.Wrapf(err, "failed to get PID of container %s", c.ID())
+	}
+	c.meta.State.Pid = int64(pid)
+	c.meta.State.ExitCode = 0
+
+	// set Snapshot MergedDir
+	c.meta.Snapshotter.Data["MergedDir"] = c.meta.BaseFS
+
+	return c.Write(mgr.Store)
 }
 
 // Stop stops a running container.
@@ -1238,45 +1234,20 @@ func (mgr *ContainerManager) DisconnectContainerFromNetwork(ctx context.Context,
 	return nil
 }
 
-func (mgr *ContainerManager) openContainerIO(id string, attach *AttachConfig) (*containerio.IO, error) {
-	return mgr.openIO(id, attach, false)
-}
-
-func (mgr *ContainerManager) openAttachIO(id string, attach *AttachConfig) (*containerio.IO, error) {
-	io := mgr.IOs.Get(id)
-	if io == nil {
-		return mgr.openIO(id, attach, false)
+func (mgr *ContainerManager) openContainerIO(id string, stdin bool) (*containerio.IO, error) {
+	if io := mgr.IOs.Get(id); io != nil {
+		return io, nil
 	}
 
+	root := mgr.Store.Path(id)
 	options := []func(*containerio.Option){
 		containerio.WithID(id),
-	}
-	if attach != nil {
-		if attach.Hijack != nil {
-			// Attaching using http.
-			options = append(options, containerio.WithHijack(attach.Hijack, attach.Upgrade))
-			if attach.Stdin {
-				options = append(options, containerio.WithStdinHijack())
-			}
-		} else if attach.MemBuffer != nil {
-			// Attaching using memory buffer.
-			options = append(options, containerio.WithMemBuffer(attach.MemBuffer))
-		} else if attach.Streams != nil {
-			// Attaching using streams.
-			options = append(options, containerio.WithStreams(attach.Streams))
-			if attach.Stdin {
-				options = append(options, containerio.WithStdinStream())
-			}
-		}
-
-		if attach.CriLogFile != nil {
-			options = append(options, containerio.WithCriLogFile(attach.CriLogFile))
-		}
-	} else {
-		options = append(options, containerio.WithDiscard())
+		containerio.WithRootDir(root),
+		containerio.WithRawFile(),
+		containerio.WithStdin(stdin),
 	}
 
-	io.AddBackend(containerio.NewOption(options...))
+	io := containerio.NewIO(containerio.NewOption(options...))
 
 	mgr.IOs.Put(id, io)
 
@@ -1284,47 +1255,17 @@ func (mgr *ContainerManager) openAttachIO(id string, attach *AttachConfig) (*con
 }
 
 func (mgr *ContainerManager) openExecIO(id string, attach *AttachConfig) (*containerio.IO, error) {
-	return mgr.openIO(id, attach, true)
-}
-
-func (mgr *ContainerManager) openIO(id string, attach *AttachConfig, exec bool) (*containerio.IO, error) {
 	if io := mgr.IOs.Get(id); io != nil {
 		return io, nil
 	}
 
 	options := []func(*containerio.Option){
 		containerio.WithID(id),
-	}
-
-	if !exec {
-		root := mgr.Store.Path(id)
-		options = append(options, containerio.WithRootDir(root))
+		containerio.WithStdin(attach.Stdin),
 	}
 
 	if attach != nil {
-		if attach.Hijack != nil {
-			// Attaching using http.
-			options = append(options, containerio.WithHijack(attach.Hijack, attach.Upgrade))
-			if attach.Stdin {
-				options = append(options, containerio.WithStdinHijack())
-			}
-		} else if attach.MemBuffer != nil {
-			// Attaching using memory buffer.
-			options = append(options, containerio.WithMemBuffer(attach.MemBuffer))
-		} else if attach.Streams != nil {
-			// Attaching using streams.
-			options = append(options, containerio.WithStreams(attach.Streams))
-			if attach.Stdin {
-				options = append(options, containerio.WithStdinStream())
-			}
-		}
-
-		if attach.CriLogFile != nil {
-			options = append(options, containerio.WithCriLogFile(attach.CriLogFile))
-		}
-	} else if !exec {
-		options = append(options, containerio.WithRawFile())
-
+		options = append(options, attachConfigToOptions(attach)...)
 	} else {
 		options = append(options, containerio.WithDiscard())
 	}
@@ -1334,6 +1275,55 @@ func (mgr *ContainerManager) openIO(id string, attach *AttachConfig, exec bool) 
 	mgr.IOs.Put(id, io)
 
 	return io, nil
+}
+
+func (mgr *ContainerManager) openAttachIO(id string, attach *AttachConfig) (*containerio.IO, error) {
+	options := []func(*containerio.Option){
+		containerio.WithID(id),
+		containerio.WithStdin(attach.Stdin),
+	}
+	if attach != nil {
+		options = append(options, attachConfigToOptions(attach)...)
+	} else {
+		options = append(options, containerio.WithDiscard())
+	}
+
+	io := mgr.IOs.Get(id)
+	if io != nil {
+		io.AddBackend(containerio.NewOption(options...))
+	} else {
+		io = containerio.NewIO(containerio.NewOption(options...))
+	}
+
+	mgr.IOs.Put(id, io)
+
+	return io, nil
+}
+
+func attachConfigToOptions(attach *AttachConfig) []func(*containerio.Option) {
+	options := []func(*containerio.Option){}
+	if attach.Hijack != nil {
+		// Attaching using http.
+		options = append(options, containerio.WithHijack(attach.Hijack, attach.Upgrade))
+		if attach.Stdin {
+			options = append(options, containerio.WithStdinHijack())
+		}
+	} else if attach.MemBuffer != nil {
+		// Attaching using memory buffer.
+		options = append(options, containerio.WithMemBuffer(attach.MemBuffer))
+	} else if attach.Streams != nil {
+		// Attaching using streams.
+		options = append(options, containerio.WithStreams(attach.Streams))
+		if attach.Stdin {
+			options = append(options, containerio.WithStdinStream())
+		}
+	}
+
+	if attach.CriLogFile != nil {
+		options = append(options, containerio.WithCriLogFile(attach.CriLogFile))
+	}
+
+	return options
 }
 
 func (mgr *ContainerManager) markStoppedAndRelease(c *Container, m *ctrd.Message) error {
