@@ -30,6 +30,7 @@ import (
 
 	"github.com/containerd/containerd/errdefs"
 	"github.com/containerd/containerd/namespaces"
+	"github.com/docker/libnetwork"
 	"github.com/go-openapi/strfmt"
 	"github.com/imdario/mergo"
 	"github.com/opencontainers/image-spec/specs-go/v1"
@@ -97,9 +98,12 @@ type ContainerMgr interface {
 	// Restart restart a running container.
 	Restart(ctx context.Context, name string, timeout int64) error
 
-	// DisconnectContainerFromNetwork disconnects the given container from
+	// Connect is used to connect a container to a network.
+	Connect(ctx context.Context, name string, networkIDOrName string, epConfig *types.EndpointSettings) error
+
+	// Disconnect disconnects the given container from
 	// given network
-	DisconnectContainerFromNetwork(ctx context.Context, containerName, networkName string, force bool) error
+	Disconnect(ctx context.Context, containerName, networkName string, force bool) error
 }
 
 // ContainerManager is the default implement of interface ContainerMgr.
@@ -308,7 +312,7 @@ func (mgr *ContainerManager) StartExec(ctx context.Context, execid string, confi
 		c.meta.Config.User = execConfig.User
 	}
 
-	if err = setupProcessUser(ctx, c.meta, &SpecWrapper{s: &specs.Spec{Process: process}}); err != nil {
+	if err = setupUser(ctx, c.meta, &specs.Spec{Process: process}); err != nil {
 		return err
 	}
 
@@ -524,7 +528,10 @@ func (mgr *ContainerManager) Create(ctx context.Context, name string, config *ty
 	defer container.Unlock()
 
 	// store disk
-	container.Write(mgr.Store)
+	if err := container.Write(mgr.Store); err != nil {
+		logrus.Errorf("failed to update meta: %v", err)
+		return nil, err
+	}
 
 	// add to collection
 	mgr.NameToID.Put(name, id)
@@ -600,32 +607,17 @@ func (mgr *ContainerManager) start(ctx context.Context, c *Container, detachKeys
 }
 
 func (mgr *ContainerManager) createContainerdContainer(ctx context.Context, c *Container) error {
-	// new a default spec.
-	s, err := ctrd.NewDefaultSpec(ctx, c.ID())
-	if err != nil {
-		return errors.Wrapf(err, "failed to generate spec: %s", c.ID())
+	// CgroupParent from HostConfig will be first priority to use,
+	// then will be value from mgr.Config.CgroupParent
+	if c.meta.HostConfig.CgroupParent == "" {
+		c.meta.HostConfig.CgroupParent = mgr.Config.CgroupParent
 	}
 
-	var cgroupsParent string
-	if c.meta.HostConfig.CgroupParent != "" {
-		cgroupsParent = c.meta.HostConfig.CgroupParent
-	} else if mgr.Config.CgroupParent != "" {
-		cgroupsParent = mgr.Config.CgroupParent
-	}
-
-	// cgroupsPath must be absolute path
-	// call filepath.Clean is to avoid bad
-	// path just like../../../.../../BadPath
-	if cgroupsParent != "" {
-		if !filepath.IsAbs(cgroupsParent) {
-			cgroupsParent = filepath.Clean("/" + cgroupsParent)
-		}
-
-		s.Linux.CgroupsPath = filepath.Join(cgroupsParent, c.ID())
-	}
-
-	var prioArr []int
-	var argsArr [][]string
+	var (
+		err     error
+		prioArr []int
+		argsArr [][]string
+	)
 	if mgr.containerPlugin != nil {
 		prioArr, argsArr, err = mgr.containerPlugin.PreStart(c)
 		if err != nil {
@@ -634,7 +626,6 @@ func (mgr *ContainerManager) createContainerdContainer(ctx context.Context, c *C
 	}
 
 	sw := &SpecWrapper{
-		s:       s,
 		ctrMgr:  mgr,
 		volMgr:  mgr.VolumeMgr,
 		netMgr:  mgr.NetworkMgr,
@@ -642,10 +633,8 @@ func (mgr *ContainerManager) createContainerdContainer(ctx context.Context, c *C
 		argsArr: argsArr,
 	}
 
-	for _, setup := range SetupFuncs() {
-		if err = setup(ctx, c.meta, sw); err != nil {
-			return err
-		}
+	if err = createSpec(ctx, c.meta, sw); err != nil {
+		return err
 	}
 
 	// open container's stdio.
@@ -653,15 +642,12 @@ func (mgr *ContainerManager) createContainerdContainer(ctx context.Context, c *C
 	if err != nil {
 		return errors.Wrap(err, "failed to open io")
 	}
-	if io.Stdin != nil && io.Stdin.OpenStdin() {
-		s.Process.Terminal = true
-	}
 
 	if err := mgr.Client.CreateContainer(ctx, &ctrd.Container{
 		ID:      c.ID(),
 		Image:   c.Image(),
 		Runtime: c.meta.HostConfig.Runtime,
-		Spec:    s,
+		Spec:    sw.s,
 		IO:      io,
 	}); err != nil {
 		logrus.Errorf("failed to create new containerd container: %s", err.Error())
@@ -703,7 +689,8 @@ func (mgr *ContainerManager) Stop(ctx context.Context, name string, timeout int6
 	defer c.Unlock()
 
 	if !c.IsRunning() {
-		return fmt.Errorf("container's status is not running: %s", c.meta.State.Status)
+		// stopping a non-running container is valid.
+		return nil
 	}
 
 	if timeout == 0 {
@@ -716,7 +703,7 @@ func (mgr *ContainerManager) Stop(ctx context.Context, name string, timeout int6
 func (mgr *ContainerManager) stop(ctx context.Context, c *Container, timeout int64) error {
 	msg, err := mgr.Client.DestroyContainer(ctx, c.ID(), timeout)
 	if err != nil {
-		return errors.Wrapf(err, "failed to destroy container: %s", c.ID())
+		return errors.Wrapf(err, "failed to destroy container %s", c.ID())
 	}
 
 	return mgr.markStoppedAndRelease(c, msg)
@@ -749,7 +736,12 @@ func (mgr *ContainerManager) Pause(ctx context.Context, name string) error {
 	}
 
 	c.meta.State.Status = types.StatusPaused
-	c.Write(mgr.Store)
+
+	if err := c.Write(mgr.Store); err != nil {
+		logrus.Errorf("failed to update meta: %v", err)
+		return err
+	}
+
 	return nil
 }
 
@@ -780,7 +772,12 @@ func (mgr *ContainerManager) Unpause(ctx context.Context, name string) error {
 	}
 
 	c.meta.State.Status = types.StatusRunning
-	c.Write(mgr.Store)
+
+	if err := c.Write(mgr.Store); err != nil {
+		logrus.Errorf("failed to update meta: %v", err)
+		return err
+	}
+
 	return nil
 }
 
@@ -859,7 +856,11 @@ func (mgr *ContainerManager) Rename(ctx context.Context, oldName, newName string
 	mgr.NameToID.Put(newName, c.ID())
 
 	c.meta.Name = newName
-	c.Write(mgr.Store)
+
+	if err := c.Write(mgr.Store); err != nil {
+		logrus.Errorf("failed to update meta: %v", err)
+		return err
+	}
 
 	return nil
 }
@@ -875,50 +876,19 @@ func (mgr *ContainerManager) Update(ctx context.Context, name string, config *ty
 	defer c.Unlock()
 
 	// update ContainerConfig of a container.
-	if !c.IsStopped() && config.Image != "" || len(config.Env) > 0 {
-		return fmt.Errorf("Only can update the container's image or Env when it is stopped")
+	if c.IsRunning() && len(config.Env) > 0 {
+		return fmt.Errorf("Only can update the container's Env when it stopped")
 	}
 
-	if config.Image != "" {
-		image, err := mgr.ImageMgr.GetImage(ctx, config.Image)
-		if err != nil {
-			return err
-		}
-		// TODO Image param is duplicate in ContainerMeta
-		// FIXME: image.Name does not exist,so convert Repotags or RepoDigests to ref
-		// return the first item of list will not equal input image name.
-		// issue: https://github.com/alibaba/pouch/issues/1001
-		// if specify a tag image, we should use the specified name
-		var refTagged string
-		imageNamed, err := reference.ParseNamedReference(config.Image)
-		if err != nil {
-			return err
-		}
-		if _, ok := imageNamed.(reference.Tagged); ok {
-			refTagged = reference.WithDefaultTagIfMissing(imageNamed).String()
-		}
-
-		ref := ""
-		if len(image.RepoTags) > 0 {
-			if utils.StringInSlice(image.RepoTags, refTagged) {
-				ref = refTagged
-			} else {
-				ref = image.RepoTags[0]
-			}
-		} else {
-			ref = image.RepoDigests[0]
-		}
-		c.meta.Config.Image = ref
-		c.meta.Image = ref
-	}
-
-	if len(config.Env) != 0 {
-		for k, v := range config.Env {
-			c.meta.Config.Env[k] = v
-		}
+	for _, v := range config.Env {
+		c.meta.Config.Env = append(c.meta.Config.Env, v)
 	}
 
 	if len(config.Labels) != 0 {
+		if c.meta.Config.Labels == nil {
+			c.meta.Config.Labels = map[string]string{}
+		}
+
 		for k, v := range config.Labels {
 			c.meta.Config.Labels[k] = v
 		}
@@ -962,7 +932,7 @@ func (mgr *ContainerManager) Update(ctx context.Context, name string, config *ty
 
 	// store disk.
 	if updateErr == nil {
-		c.Write(mgr.Store)
+		updateErr = c.Write(mgr.Store)
 	}
 
 	return updateErr
@@ -1089,7 +1059,10 @@ func (mgr *ContainerManager) Upgrade(ctx context.Context, name string, config *t
 	}
 
 	// Works fine, store new container info to disk.
-	c.Write(mgr.Store)
+	if err := c.Write(mgr.Store); err != nil {
+		logrus.Errorf("failed to update meta: %v", err)
+		return err
+	}
 
 	return nil
 }
@@ -1156,27 +1129,64 @@ func (mgr *ContainerManager) Restart(ctx context.Context, name string, timeout i
 	c.Lock()
 	defer c.Unlock()
 
-	if !c.IsRunning() {
-		return fmt.Errorf("cannot restart a non running container")
-	}
-
 	if timeout == 0 {
 		timeout = c.StopTimeout()
 	}
 
-	// stop container
-	if err := mgr.stop(ctx, c, timeout); err != nil {
-		return errors.Wrapf(err, "failed to stop container")
+	if c.IsRunning() {
+		// stop container if it is running.
+		if err := mgr.stop(ctx, c, timeout); err != nil {
+			logrus.Errorf("failed to stop container %s when restarting: %v", c.ID(), err)
+			return errors.Wrapf(err, fmt.Sprintf("failed to stop container %s", c.ID()))
+		}
 	}
-	logrus.Debug("Restart: container " + c.ID() + "  stopped succeeded")
 
+	logrus.Debugf("start container %s when restarting", c.ID())
 	// start container
 	return mgr.start(ctx, c, "")
 }
 
-// DisconnectContainerFromNetwork disconnects the given container from
+// Connect is used to connect a container to a network.
+func (mgr *ContainerManager) Connect(ctx context.Context, name string, networkIDOrName string, epConfig *types.EndpointSettings) error {
+	c, err := mgr.container(name)
+	if err != nil {
+		return errors.Wrapf(err, "failed to get container: %s", name)
+	} else if c == nil {
+		return fmt.Errorf("container: %s is not exist", name)
+	}
+
+	n, err := mgr.NetworkMgr.Get(context.Background(), networkIDOrName)
+	if err != nil {
+		return errors.Wrapf(err, "failed to get network: %s", networkIDOrName)
+	} else if n == nil {
+		return fmt.Errorf("network: %s is not exist", networkIDOrName)
+	}
+
+	if epConfig == nil {
+		epConfig = &types.EndpointSettings{}
+	}
+
+	c.Lock()
+	defer c.Unlock()
+
+	if c.meta.State.Status != types.StatusRunning {
+		if c.meta.State.Status == types.StatusDead {
+			return fmt.Errorf("Container %s is marked for removal and cannot be connected or disconnected to the network", c.meta.ID)
+		}
+
+		if err := mgr.updateNetworkConfig(c.meta, n.Name, epConfig); err != nil {
+			return err
+		}
+	} else if err := mgr.connectToNetwork(ctx, c.meta, networkIDOrName, epConfig); err != nil {
+		return err
+	}
+
+	return c.Write(mgr.Store)
+}
+
+// Disconnect disconnects the given container from
 // given network
-func (mgr *ContainerManager) DisconnectContainerFromNetwork(ctx context.Context, containerName, networkName string, force bool) error {
+func (mgr *ContainerManager) Disconnect(ctx context.Context, containerName, networkName string, force bool) error {
 	c, err := mgr.container(containerName)
 	if err != nil {
 		// TODO(ziren): if force is true, force delete endpoint
@@ -1229,6 +1239,7 @@ func (mgr *ContainerManager) DisconnectContainerFromNetwork(ctx context.Context,
 	// update container meta json
 	if err := c.Write(mgr.Store); err != nil {
 		logrus.Errorf("failed to update meta: %v", err)
+		return err
 	}
 
 	return nil
@@ -1252,6 +1263,105 @@ func (mgr *ContainerManager) openContainerIO(id string, stdin bool) (*containeri
 	mgr.IOs.Put(id, io)
 
 	return io, nil
+}
+
+func (mgr *ContainerManager) updateNetworkConfig(container *ContainerMeta, networkIDOrName string, endpointConfig *types.EndpointSettings) error {
+	if IsContainer(container.HostConfig.NetworkMode) {
+		return fmt.Errorf("container sharing network namespace with another container or host cannot be connected to any other network")
+	}
+
+	// TODO check bridge-mode conflict
+
+	if IsUserDefined(container.HostConfig.NetworkMode) {
+		if hasUserDefinedIPAddress(endpointConfig) {
+			return fmt.Errorf("user specified IP address is supported on user defined networks only")
+		}
+		if endpointConfig != nil && len(endpointConfig.Aliases) > 0 {
+			return fmt.Errorf("network-scoped alias is supported only for containers in user defined networks")
+		}
+	} else {
+		addShortID := true
+		shortID := utils.TruncateID(container.ID)
+		for _, alias := range endpointConfig.Aliases {
+			if alias == shortID {
+				addShortID = false
+				break
+			}
+		}
+		if addShortID {
+			endpointConfig.Aliases = append(endpointConfig.Aliases, shortID)
+		}
+	}
+
+	network, err := mgr.NetworkMgr.Get(context.Background(), networkIDOrName)
+	if err != nil {
+		return err
+	}
+
+	if err := validateNetworkingConfig(network.Network, endpointConfig); err != nil {
+		return err
+	}
+
+	container.NetworkSettings.Networks[network.Name] = endpointConfig
+
+	return nil
+}
+
+func (mgr *ContainerManager) connectToNetwork(ctx context.Context, container *ContainerMeta, networkIDOrName string, epConfig *types.EndpointSettings) (err error) {
+	if IsContainer(container.HostConfig.NetworkMode) {
+		return fmt.Errorf("container sharing network namespace with another container or host cannot be connected to any other network")
+	}
+
+	// TODO check bridge mode conflict
+
+	network, err := mgr.NetworkMgr.Get(context.Background(), networkIDOrName)
+	if err != nil {
+		return errors.Wrap(err, "failed to get network")
+	}
+
+	endpoint := mgr.buildContainerEndpoint(container)
+	endpoint.Name = network.Name
+	endpoint.EndpointConfig = epConfig
+	if _, err := mgr.NetworkMgr.EndpointCreate(ctx, endpoint); err != nil {
+		logrus.Errorf("failed to create endpoint: %v", err)
+		return err
+	}
+
+	return mgr.updateNetworkConfig(container, networkIDOrName, endpoint.EndpointConfig)
+}
+
+func (mgr *ContainerManager) updateNetworkSettings(container *ContainerMeta, n libnetwork.Network) error {
+	if container.NetworkSettings == nil {
+		container.NetworkSettings = &types.NetworkSettings{Networks: make(map[string]*types.EndpointSettings)}
+	}
+
+	if !IsHost(container.HostConfig.NetworkMode) && IsHost(n.Type()) {
+		return fmt.Errorf("container cannot be connected to host network")
+	}
+
+	for s := range container.NetworkSettings.Networks {
+		sn, err := mgr.NetworkMgr.Get(context.Background(), s)
+		if err != nil {
+			continue
+		}
+
+		if sn.Name == n.Name() {
+			// Avoid duplicate config
+			return nil
+		}
+		if !IsPrivate(sn.Type) || !IsPrivate(n.Type()) {
+			return fmt.Errorf("container sharing network namespace with another container or host cannot be connected to any other network")
+		}
+		if IsNone(sn.Name) || IsNone(n.Name()) {
+			return fmt.Errorf("container cannot be connected to multiple networks with one of the networks in none mode")
+		}
+	}
+
+	if _, ok := container.NetworkSettings.Networks[n.Name()]; !ok {
+		container.NetworkSettings.Networks[n.Name()] = new(types.EndpointSettings)
+	}
+
+	return nil
 }
 
 func (mgr *ContainerManager) openExecIO(id string, attach *AttachConfig) (*containerio.IO, error) {
@@ -1368,7 +1478,9 @@ func (mgr *ContainerManager) markStoppedAndRelease(c *Container, m *ctrd.Message
 	// update meta
 	if err := c.Write(mgr.Store); err != nil {
 		logrus.Errorf("failed to update meta: %v", err)
+		return err
 	}
+
 	return nil
 }
 
@@ -1391,6 +1503,7 @@ func (mgr *ContainerManager) exitedAndRelease(id string, m *ctrd.Message) error 
 	c.meta.State.Status = types.StatusExited
 	if err := c.Write(mgr.Store); err != nil {
 		logrus.Errorf("failed to update meta: %v", err)
+		return err
 	}
 
 	// send exit event to monitor

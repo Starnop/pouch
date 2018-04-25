@@ -1086,6 +1086,40 @@ paths:
             $ref: "#/responses/500ErrorResponse"
         tags: ["Network"]
 
+  /networks/{id}/connect:
+    post:
+      summary: "Connect a container to a network"
+      operationId: "NetworkConnect"
+      consumes:
+        - "application/json"
+      responses:
+        200:
+          description: "No error"
+        400:
+          description: "bad parameter"
+          schema:
+            $ref: "#/definitions/Error"
+        404:
+          description: "Network or container not found"
+          schema:
+            $ref: "#/responses/404ErrorResponse"
+        500:
+          description: "Server error"
+          schema:
+            $ref: "#/responses/500ErrorResponse"
+      parameters:
+        - name: "id"
+          in: "path"
+          description: "Network ID or name"
+          required: true
+          type: "string"
+        - name: "container"
+          in: "body"
+          required: true
+          schema:
+            $ref: "#/definitions/NetworkConnect"
+      tags: ["Network"]
+
   /networks/{id}/disconnect:
     post:
       summary: "Disconnect a container from a network"
@@ -2070,9 +2104,6 @@ definitions:
       - properties:
           RestartPolicy:
             $ref: "#/definitions/RestartPolicy"
-          Image:
-            type: "string"
-            description: "Image ID or Name"
           Env:
             description: |
               A list of environment variables to set inside the container in the form `["VAR=value", ...]`. A variable without `=` is removed from the environment, rather than to have an empty value.
@@ -2191,10 +2222,6 @@ definitions:
         items:
           type: "string"
           example: "c 13:* rwm"
-      DiskQuota:
-        description: "Disk limit (in bytes)."
-        type: "integer"
-        format: "int64"
       KernelMemory:
         description: "Kernel memory limit in bytes."
         type: "integer"
@@ -3134,6 +3161,16 @@ definitions:
         type: "string"
       MaximumRetryCount:
         type: "integer"
+
+  NetworkConnect:
+    type: "object"
+    description: "contains the request for the remote API: POST /networks/{id:.*}/connect"
+    properties:
+      Container:
+        type: "string"
+        description: "The ID or name of the container to connect to the network."
+      EndpointConfig:
+        $ref: "#/definitions/EndpointSettings"
 
   NetworkCreateConfig:
     type: "object"

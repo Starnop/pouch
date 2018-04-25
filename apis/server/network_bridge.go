@@ -55,9 +55,9 @@ func (s *Server) listNetwork(ctx context.Context, rw http.ResponseWriter, req *h
 }
 
 func (s *Server) getNetwork(ctx context.Context, rw http.ResponseWriter, req *http.Request) error {
-	name := mux.Vars(req)["name"]
+	id := mux.Vars(req)["id"]
 
-	network, err := s.NetworkMgr.Get(ctx, name)
+	network, err := s.NetworkMgr.Get(ctx, id)
 	if err != nil {
 		return err
 	}
@@ -68,12 +68,32 @@ func (s *Server) getNetwork(ctx context.Context, rw http.ResponseWriter, req *ht
 }
 
 func (s *Server) deleteNetwork(ctx context.Context, rw http.ResponseWriter, req *http.Request) error {
-	name := mux.Vars(req)["name"]
+	id := mux.Vars(req)["id"]
 
-	if err := s.NetworkMgr.Remove(ctx, name); err != nil {
+	if err := s.NetworkMgr.Remove(ctx, id); err != nil {
 		return err
 	}
 	rw.WriteHeader(http.StatusNoContent)
+	return nil
+}
+
+func (s *Server) connectToNetwork(ctx context.Context, rw http.ResponseWriter, req *http.Request) error {
+	networkIDOrName := mux.Vars(req)["id"]
+	connectConfig := &types.NetworkConnect{}
+
+	// decode request body
+	if err := json.NewDecoder(req.Body).Decode(connectConfig); err != nil {
+		return httputils.NewHTTPError(err, http.StatusBadRequest)
+	}
+	// validate request body
+	if err := connectConfig.Validate(strfmt.NewFormats()); err != nil {
+		return httputils.NewHTTPError(err, http.StatusBadRequest)
+	}
+
+	if err := s.ContainerMgr.Connect(ctx, connectConfig.Container, networkIDOrName, connectConfig.EndpointConfig); err != nil {
+		return err
+	}
+	rw.WriteHeader(http.StatusOK)
 	return nil
 }
 
@@ -88,9 +108,9 @@ func (s *Server) disconnectNetwork(ctx context.Context, rw http.ResponseWriter, 
 		return httputils.NewHTTPError(err, http.StatusBadRequest)
 	}
 
-	name := mux.Vars(req)["name"]
+	id := mux.Vars(req)["id"]
 
-	return s.ContainerMgr.DisconnectContainerFromNetwork(ctx, network.Container, name, network.Force)
+	return s.ContainerMgr.Disconnect(ctx, network.Container, id, network.Force)
 }
 
 func buildNetworkInspectResp(n *networktypes.Network) *types.NetworkInspectResp {
