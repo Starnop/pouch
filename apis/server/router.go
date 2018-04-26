@@ -155,7 +155,7 @@ func filter(handler handler, s *Server) http.HandlerFunc {
 
 		//trim the heading slash in parameter name
 		name := mux.Vars(req)["name"]
-		if name != "" && utils.IsSigma(ctx) && strings.HasPrefix(name, "/") {
+		if name != "" && utils.IsSigma(ctx, req) && strings.HasPrefix(name, "/") {
 			name = strings.TrimPrefix(name, "/")
 			mux.Vars(req)["name"] = name
 		}

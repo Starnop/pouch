@@ -2,6 +2,7 @@ package utils
 
 import (
 	"context"
+	"net/http"
 	"strings"
 )
 
@@ -34,6 +35,10 @@ func GetTlsCommonName(ctx context.Context) string {
 }
 
 // IsSigma checks tls name and return if this context is owned by sigma
-func IsSigma(ctx context.Context) bool {
-	return GetTlsIssuer(ctx) == "ali" && strings.Contains(GetTlsCommonName(ctx), "sigma")
+func IsSigma(ctx context.Context, req *http.Request) bool {
+	isRemoteSigma := GetTlsIssuer(ctx) == "ali" && strings.Contains(GetTlsCommonName(ctx), "sigma")
+	if req == nil {
+		return isRemoteSigma
+	}
+	return isRemoteSigma || strings.Contains(req.Header.Get("User-Agent"), "Docker-Client")
 }
