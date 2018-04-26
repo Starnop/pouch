@@ -34,8 +34,8 @@ func GetTlsCommonName(ctx context.Context) string {
 	return issuer.(string)
 }
 
-// IsSigma checks tls name and return if this context is owned by sigma
-func IsSigma(ctx context.Context, req *http.Request) bool {
+// IsStale checks tls name and return if this context is owned by sigma or use docker client
+func IsStale(ctx context.Context, req *http.Request) bool {
 	isRemoteSigma := GetTlsIssuer(ctx) == "ali" && strings.Contains(GetTlsCommonName(ctx), "sigma")
 	if req == nil {
 		return isRemoteSigma
