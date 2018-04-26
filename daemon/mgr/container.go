@@ -3,6 +3,7 @@ package mgr
 import (
 	"context"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"os/exec"
 	"path"
@@ -33,6 +34,7 @@ import (
 	"github.com/docker/libnetwork"
 	"github.com/go-openapi/strfmt"
 	"github.com/imdario/mergo"
+	"github.com/magiconair/properties"
 	"github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/pkg/errors"
@@ -467,7 +469,7 @@ func (mgr *ContainerManager) Create(ctx context.Context, name string, config *ty
 	}
 
 	// parse volume config
-	if err := mgr.parseBinds(ctx, meta); err != nil {
+	if err := mgr.generateMountPoints(ctx, meta); err != nil {
 		return nil, errors.Wrap(err, "failed to parse volume argument")
 	}
 
@@ -875,15 +877,6 @@ func (mgr *ContainerManager) Update(ctx context.Context, name string, config *ty
 	c.Lock()
 	defer c.Unlock()
 
-	// update ContainerConfig of a container.
-	if c.IsRunning() && len(config.Env) > 0 {
-		return fmt.Errorf("Only can update the container's Env when it stopped")
-	}
-
-	for _, v := range config.Env {
-		c.meta.Config.Env = append(c.meta.Config.Env, v)
-	}
-
 	if len(config.Labels) != 0 {
 		if c.meta.Config.Labels == nil {
 			c.meta.Config.Labels = map[string]string{}
@@ -918,8 +911,22 @@ func (mgr *ContainerManager) Update(ctx context.Context, name string, config *ty
 
 	// update HostConfig of a container.
 	// TODO update restartpolicy when container is running.
-	if config.RestartPolicy.Name != "" {
+	if config.RestartPolicy != nil && config.RestartPolicy.Name != "" {
 		c.meta.HostConfig.RestartPolicy = config.RestartPolicy
+	}
+
+	// update env when container is running, default snapshotter driver
+	// is overlayfs
+	if (c.IsRunning() || c.IsPaused()) && len(config.Env) > 0 && c.meta.Snapshotter != nil {
+		if mergedDir, exists := c.meta.Snapshotter.Data["MergedDir"]; exists {
+			if err := mgr.updateContainerEnv(c.meta.Config.Env, mergedDir); err != nil {
+				return fmt.Errorf("failed to update env of running container: %v", err)
+			}
+		}
+	}
+
+	for _, v := range config.Env {
+		c.meta.Config.Env = append(c.meta.Config.Env, v)
 	}
 
 	// If container is not running, update container metadata struct is enough,
@@ -936,6 +943,126 @@ func (mgr *ContainerManager) Update(ctx context.Context, name string, config *ty
 	}
 
 	return updateErr
+}
+
+// updateContainerEnv update the container's envs in /etc/instanceInfo and /etc/profile.d/pouchenv.sh
+// Env used by rich container.
+func (mgr *ContainerManager) updateContainerEnv(containerEnvs []string, baseFs string) error {
+	var (
+		envPropertiesPath = path.Join(baseFs, "/etc/instanceInfo")
+		envShPath         = path.Join(baseFs, "/etc/profile.d/pouchenv.sh")
+	)
+
+	// if dir of pouch.sh is not exist, it's unnecessary to update that files.
+	if _, ex := os.Stat(path.Join(baseFs, "/etc/profile.d")); ex != nil {
+		return nil
+	}
+
+	newEnvs := containerEnvs
+	kv := map[string]string{}
+	for _, env := range newEnvs {
+		arr := strings.SplitN(env, "=", 2)
+		if len(arr) == 2 {
+			kv[arr[0]] = arr[1]
+		}
+	}
+
+	// load container's env file if exist
+	if _, err := os.Stat(envShPath); err != nil {
+		return fmt.Errorf("failed to state container's env file /etc/profile.d/pouchenv.sh: %v", err)
+	}
+	// update /etc/profile.d/pouchnv.sh
+	b, err := ioutil.ReadFile(envShPath)
+	if err != nil {
+		return fmt.Errorf("failed to read container's environment variable file(/etc/profile.d/pouchenv.sh): %v", err)
+	}
+	envsh := string(b)
+	envsh = strings.Trim(envsh, "\n")
+	envs := strings.Split(envsh, "\n")
+	envMap := make(map[string]string)
+	for _, e := range envs {
+		e = strings.TrimLeft(e, "export ")
+		arr := strings.SplitN(e, "=", 2)
+		val := strings.Trim(arr[1], "\"")
+		envMap[arr[0]] = val
+	}
+
+	var str string
+	for key, val := range envMap {
+		if v, ok := kv[key]; ok {
+			s := strings.Replace(v, "\"", "\\\"", -1)
+			s = strings.Replace(s, "$", "\\$", -1)
+			v = s
+			if key == "PATH" {
+				v = v + ":$PATH"
+			}
+			if v == val {
+				continue
+			} else {
+				envMap[key] = v
+				logrus.Infof("the env is exist and the value is not same, key=%s, old value=%s, new value=%s", key, val, v)
+			}
+		}
+	}
+	// append the new envs
+	for k, v := range kv {
+		if _, ok := envMap[k]; !ok {
+			envMap[k] = v
+			logrus.Infof("the env is not exist, set new key value pair, new key=%s, new value=%s", k, v)
+		}
+	}
+
+	for k, v := range envMap {
+		str += fmt.Sprintf("export %s=\"%s\"\n", k, v)
+	}
+	ioutil.WriteFile(envShPath, []byte(str), 0755)
+
+	// properties load container's env file if exist
+	if _, err := os.Stat(envPropertiesPath); err != nil {
+		//if etc/instanceInfo is not exist, it's unnecessary to update that file.
+		return nil
+	}
+
+	p, err := properties.LoadFile(envPropertiesPath, properties.ISO_8859_1)
+	if err != nil {
+		return fmt.Errorf("failed to properties load container's environment variable file(/etc/instanceInfo): %v", err)
+	}
+
+	for key, val := range kv {
+		if v, ok := p.Get("env_" + key); ok {
+			if key == "PATH" {
+				// refer to https://aone.alipay.com/project/532482/task/9745028
+				val = val + ":$PATH"
+			}
+			if v == val {
+				continue
+			} else {
+				_, _, err := p.Set("env_"+key, val)
+				if err != nil {
+					return fmt.Errorf("failed to properties set value key=%s, value=%s: %v", "env_"+key, val, err)
+				}
+				logrus.Infof("the environment variable exist and the value is not same, key=%s, old value=%s, new value=%s", "env_"+key, v, val)
+			}
+		} else {
+			_, _, err := p.Set("env_"+key, val)
+			if err != nil {
+				return fmt.Errorf("failed to properties set value key=%s, value=%s: %v", "env_"+key, val, err)
+			}
+			logrus.Infof("the environment variable not exist and set the new key value pair, key=%s, value=%s", "env_"+key, val)
+		}
+	}
+	f, err := os.Create(envPropertiesPath)
+	if err != nil {
+		return fmt.Errorf("failed to create container's environment variable file(properties): %v", err)
+	}
+	defer f.Close()
+
+	_, err = p.Write(f, properties.ISO_8859_1)
+	if err != nil {
+		return fmt.Errorf("failed to write to container's environment variable file(properties): %v", err)
+	}
+
+	return nil
 }
 
 // Upgrade upgrades a container with new image and args.
@@ -1597,23 +1724,19 @@ func (mgr *ContainerManager) bindVolume(ctx context.Context, name string, meta *
 	return mountPath, driver, nil
 }
 
-func (mgr *ContainerManager) parseBinds(ctx context.Context, meta *ContainerMeta) error {
-	logrus.Debugf("bind volumes: %v", meta.HostConfig.Binds)
-
-	type emptyStruct struct{}
-
+func (mgr *ContainerManager) generateMountPoints(ctx context.Context, meta *ContainerMeta) error {
 	var err error
 
 	if meta.Config.Volumes == nil {
 		meta.Config.Volumes = make(map[string]interface{})
 	}
 
-	// define a volume map to duplicate removal
-	volumeSet := map[string]emptyStruct{}
-
 	if meta.Mounts == nil {
 		meta.Mounts = make([]*types.MountPoint, 0)
 	}
+
+	// define a volume map to duplicate removal
+	volumeSet := map[string]struct{}{}
 
 	defer func() {
 		if err != nil {
@@ -1623,47 +1746,33 @@ func (mgr *ContainerManager) parseBinds(ctx context.Context, meta *ContainerMeta
 		}
 	}()
 
-	// parse volumes from image
-	image, err := mgr.ImageMgr.GetImage(ctx, meta.Image)
+	err = mgr.getMountPointFromVolumes(ctx, meta, volumeSet)
 	if err != nil {
-		return errors.Wrapf(err, "failed to get image: %s", meta.Image)
+		return errors.Wrap(err, "failed to get mount point from volumes")
 	}
-	for dest := range image.Config.Volumes {
-		if _, exist := meta.Config.Volumes[dest]; !exist {
-			meta.Config.Volumes[dest] = emptyStruct{}
-		}
 
-		// check if volume has been created
-		name := randomid.Generate()
-		if _, exist := volumeSet[name]; exist {
-			continue
-		}
-
-		if opts.CheckDuplicateMountPoint(meta.Mounts, dest) {
-			logrus.Warnf("duplicate mount point: %s from image", dest)
-			continue
-		}
-
-		mp := new(types.MountPoint)
-		mp.Name = name
-		mp.Named = true
-		mp.Destination = dest
-
-		mp.Source, mp.Driver, err = mgr.bindVolume(ctx, mp.Name, meta)
-		if err != nil {
-			logrus.Errorf("failed to bind volume: %s, err: %v", mp.Name, err)
-			return errors.Wrap(err, "failed to bind volume")
-		}
-
-		err = opts.ParseBindMode(mp, "")
-		if err != nil {
-			logrus.Errorf("failed to parse mode, err: %v", err)
-			return err
-		}
-
-		volumeSet[mp.Name] = emptyStruct{}
-		meta.Mounts = append(meta.Mounts, mp)
+	err = mgr.getMountPointFromImage(ctx, meta, volumeSet)
+	if err != nil {
+		return errors.Wrap(err, "failed to get mount point from image")
 	}
+
+	err = mgr.getMountPointFromBinds(ctx, meta, volumeSet)
+	if err != nil {
+		return errors.Wrap(err, "failed to get mount point from binds")
+	}
+
+	err = mgr.getMountPointFromContainers(ctx, meta, volumeSet)
+	if err != nil {
+		return errors.Wrap(err, "failed to get mount point from containers")
+	}
+
+	return nil
+}
+
+func (mgr *ContainerManager) getMountPointFromBinds(ctx context.Context, meta *ContainerMeta, volumeSet map[string]struct{}) error {
+	var err error
+
+	logrus.Debugf("bind volumes: %v", meta.HostConfig.Binds)
 
 	// parse binds
 	for _, b := range meta.HostConfig.Binds {
@@ -1691,18 +1800,18 @@ func (mgr *ContainerManager) parseBinds(ctx context.Context, meta *ContainerMeta
 			return errors.Errorf("unknown bind: %s", b)
 		}
 
+		if opts.CheckDuplicateMountPoint(meta.Mounts, mp.Destination) {
+			logrus.Warnf("duplicate mount point: %s", mp.Destination)
+			continue
+		}
+
 		if mp.Source == "" {
 			mp.Source = randomid.Generate()
 
 			// Source is empty, anonymouse volume
 			if _, exist := meta.Config.Volumes[mp.Destination]; !exist {
-				meta.Config.Volumes[mp.Destination] = emptyStruct{}
+				meta.Config.Volumes[mp.Destination] = struct{}{}
 			}
-		}
-
-		if opts.CheckDuplicateMountPoint(meta.Mounts, mp.Destination) {
-			logrus.Warnf("duplicate mount point: %s", mp.Destination)
-			continue
 		}
 
 		err = opts.ParseBindMode(mp, mode)
@@ -1722,7 +1831,7 @@ func (mgr *ContainerManager) parseBinds(ctx context.Context, meta *ContainerMeta
 					return errors.Wrap(err, "failed to bind volume")
 				}
 
-				volumeSet[mp.Name] = emptyStruct{}
+				volumeSet[mp.Name] = struct{}{}
 			}
 
 			if mp.Replace != "" {
@@ -1757,6 +1866,100 @@ func (mgr *ContainerManager) parseBinds(ctx context.Context, meta *ContainerMeta
 
 		meta.Mounts = append(meta.Mounts, mp)
 	}
+
+	return nil
+}
+
+func (mgr *ContainerManager) getMountPointFromVolumes(ctx context.Context, meta *ContainerMeta, volumeSet map[string]struct{}) error {
+	var err error
+
+	// parse volumes
+	for dest := range meta.Config.Volumes {
+		if opts.CheckDuplicateMountPoint(meta.Mounts, dest) {
+			logrus.Warnf("duplicate mount point: %s from volumes", dest)
+			continue
+		}
+
+		// check if volume has been created
+		name := randomid.Generate()
+		if _, exist := volumeSet[name]; exist {
+			continue
+		}
+
+		mp := new(types.MountPoint)
+		mp.Name = name
+		mp.Named = true
+		mp.Destination = dest
+
+		mp.Source, mp.Driver, err = mgr.bindVolume(ctx, mp.Name, meta)
+		if err != nil {
+			logrus.Errorf("failed to bind volume: %s, err: %v", mp.Name, err)
+			return errors.Wrap(err, "failed to bind volume")
+		}
+
+		err = opts.ParseBindMode(mp, "")
+		if err != nil {
+			logrus.Errorf("failed to parse mode, err: %v", err)
+			return err
+		}
+
+		volumeSet[mp.Name] = struct{}{}
+		meta.Mounts = append(meta.Mounts, mp)
+	}
+
+	return nil
+}
+
+func (mgr *ContainerManager) getMountPointFromImage(ctx context.Context, meta *ContainerMeta, volumeSet map[string]struct{}) error {
+	var err error
+
+	// parse volumes from image
+	image, err := mgr.ImageMgr.GetImage(ctx, meta.Image)
+	if err != nil {
+		return errors.Wrapf(err, "failed to get image: %s", meta.Image)
+	}
+	for dest := range image.Config.Volumes {
+		if _, exist := meta.Config.Volumes[dest]; !exist {
+			meta.Config.Volumes[dest] = struct{}{}
+		}
+
+		// check if volume has been created
+		name := randomid.Generate()
+		if _, exist := volumeSet[name]; exist {
+			continue
+		}
+
+		if opts.CheckDuplicateMountPoint(meta.Mounts, dest) {
+			logrus.Warnf("duplicate mount point: %s from image", dest)
+			continue
+		}
+
+		mp := new(types.MountPoint)
+		mp.Name = name
+		mp.Named = true
+		mp.Destination = dest
+
+		mp.Source, mp.Driver, err = mgr.bindVolume(ctx, mp.Name, meta)
+		if err != nil {
+			logrus.Errorf("failed to bind volume: %s, err: %v", mp.Name, err)
+			return errors.Wrap(err, "failed to bind volume")
+		}
+
+		err = opts.ParseBindMode(mp, "")
+		if err != nil {
+			logrus.Errorf("failed to parse mode, err: %v", err)
+			return err
+		}
+
+		volumeSet[mp.Name] = struct{}{}
+		meta.Mounts = append(meta.Mounts, mp)
+	}
+
+	return nil
+}
+
+func (mgr *ContainerManager) getMountPointFromContainers(ctx context.Context, meta *ContainerMeta, volumeSet map[string]struct{}) error {
+	var err error
 
 	// parse volumes from other containers
 	for _, v := range meta.HostConfig.VolumesFrom {
@@ -1795,8 +1998,8 @@ func (mgr *ContainerManager) parseBinds(ctx context.Context, meta *ContainerMeta
 					return errors.Wrap(err, "failed to bind volume")
 				}
 
-				meta.Config.Volumes[mp.Destination] = emptyStruct{}
-				volumeSet[mp.Name] = emptyStruct{}
+				meta.Config.Volumes[mp.Destination] = struct{}{}
+				volumeSet[mp.Name] = struct{}{}
 			}
 
 			err = opts.ParseBindMode(mp, mode)

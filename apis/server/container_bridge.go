@@ -42,7 +42,7 @@ func (s *Server) renameContainer(ctx context.Context, rw http.ResponseWriter, re
 	oldName := mux.Vars(req)["name"]
 	newName := req.FormValue("name")
 
-	if utils.IsSigma(ctx) && strings.HasPrefix(newName, "/") {
+	if utils.IsStale(ctx, req) && strings.HasPrefix(newName, "/") {
 		newName = strings.TrimPrefix(newName, "/")
 	}
 
@@ -165,7 +165,7 @@ func (s *Server) createContainer(ctx context.Context, rw http.ResponseWriter, re
 
 	name := req.FormValue("name")
 
-	if utils.IsSigma(ctx) {
+	if utils.IsStale(ctx, req) {
 		if strings.HasPrefix(name, "/") {
 			name = strings.TrimPrefix(name, "/")
 		}
@@ -339,7 +339,7 @@ func (s *Server) getContainer(ctx context.Context, rw http.ResponseWriter, req *
 		},
 	}
 
-	if utils.IsSigma(ctx) {
+	if utils.IsStale(ctx, req) {
 		container.Name = fmt.Sprintf("/%s", container.Name)
 	}
 
