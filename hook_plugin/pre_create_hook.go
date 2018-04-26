@@ -136,6 +136,12 @@ func (c ContPlugin) PreCreate(in io.ReadCloser) (io.ReadCloser, error) {
 
 		// convert label to env
 		for k, v := range createConfig.Labels {
+			lowerKey := strings.ToLower(k)
+			if strings.Contains(lowerKey, "secur") ||
+				strings.Contains(lowerKey, "pass") ||
+				strings.Contains(lowerKey, "key") {
+				continue
+			}
 			createConfig.Env = append(createConfig.Env, fmt.Sprintf("%s=%s", escapseLableToEnvName(k), v))
 		}
 
