@@ -103,5 +103,5 @@ func (c ContPlugin) PreCreateEndpoint(cid string, env []string) (priority int, d
 }
 
 func main() {
-	fmt.Println(ContainerPlugin, DaemonPlugin)
+	fmt.Println(ContainerPlugin, DaemonPlugin, VolumePlugin)
 }
