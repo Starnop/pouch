@@ -7,6 +7,7 @@ import (
 
 	"github.com/alibaba/pouch/apis/types"
 	"github.com/alibaba/pouch/pkg/httputils"
+	"github.com/alibaba/pouch/pkg/utils"
 )
 
 func (s *Server) ping(context context.Context, rw http.ResponseWriter, req *http.Request) (err error) {
@@ -20,6 +21,23 @@ func (s *Server) info(ctx context.Context, rw http.ResponseWriter, req *http.Req
 	if err != nil {
 		return err
 	}
+
+	if utils.IsStale(ctx, req) {
+		ba, err := json.Marshal(info)
+		if err != nil {
+			return err
+		}
+		m := make(map[string]interface{})
+		err = json.Unmarshal(ba, &m)
+		if err != nil {
+			return err
+		}
+		rootDir := m["PouchRootDir"]
+		delete(m, "PouchRootDir")
+		m["RootDir"] = rootDir
+		return EncodeResponse(rw, http.StatusOK, m)
+	}
+
 	return EncodeResponse(rw, http.StatusOK, info)
 }
 
