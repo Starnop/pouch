@@ -29,6 +29,7 @@ type Server struct {
 	NetworkMgr       mgr.NetworkMgr
 	listeners        []net.Listener
 	ContainerPlugin  plugins.ContainerPlugin
+	VolumePlugin     plugins.VolumePlugin
 	ManagerWhiteList map[string]struct{}
 	lock             sync.RWMutex
 }

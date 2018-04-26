@@ -9,6 +9,8 @@ import (
 	"github.com/alibaba/pouch/apis/types"
 	"github.com/alibaba/pouch/pkg/httputils"
 	"github.com/alibaba/pouch/pkg/randomid"
+	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 
 	"github.com/go-openapi/strfmt"
 	"github.com/gorilla/mux"
@@ -23,6 +25,13 @@ func (s *Server) createVolume(ctx context.Context, rw http.ResponseWriter, req *
 	// validate request body
 	if err := config.Validate(strfmt.NewFormats()); err != nil {
 		return httputils.NewHTTPError(err, http.StatusBadRequest)
+	}
+
+	if s.VolumePlugin != nil {
+		logrus.Infof("invoke volume pre-create hook in plugin")
+		if err := s.VolumePlugin.PreVolumeCreate(config); err != nil {
+			return errors.Wrap(err, "failed to execute volume pre-create plugin point")
+		}
 	}
 
 	name := config.Name
