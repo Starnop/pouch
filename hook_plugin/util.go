@@ -224,6 +224,7 @@ func setupEnv() {
 		logrus.Infof("read config file error %v", err)
 	} else {
 		for _, line := range bytes.Split(b, []byte{'\n'}) {
+			line = bytes.TrimSpace(line)
 			if bytes.Contains(line, []byte("--set-env")) && !bytes.HasPrefix(line, []byte("#")) {
 				splitByComma := bytes.Contains(line, []byte("--set-env-comma"))
 				splitChar := byte(' ')
