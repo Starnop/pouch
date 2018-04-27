@@ -318,6 +318,11 @@ func (mgr *ContainerManager) StartExec(ctx context.Context, execid string, confi
 		return err
 	}
 
+	// set exec process ulimit
+	if err := setupRlimits(ctx, c.meta.HostConfig, &specs.Spec{Process: process}); err != nil {
+		return err
+	}
+
 	execConfig.Running = true
 	defer func() {
 		if err != nil {
@@ -881,13 +886,25 @@ func (mgr *ContainerManager) Update(ctx context.Context, name string, config *ty
 		return fmt.Errorf("failed to update container %s: can not update kernel memory to a running container, please stop it first", c.ID())
 	}
 
-	if len(config.Labels) != 0 {
+	// compatibility with alidocker, UpdateConfig.Label is []string
+	// but ContainerConfig.Labels is map[string]string
+	if len(config.Label) != 0 {
 		if c.meta.Config.Labels == nil {
 			c.meta.Config.Labels = map[string]string{}
 		}
 
-		for k, v := range config.Labels {
-			c.meta.Config.Labels[k] = v
+		// support remove some labels
+		newLabels, err := opts.ParseLabels(config.Label)
+		if err != nil {
+			return fmt.Errorf("failed to parse labels: %v", err)
+		}
+
+		for k, v := range newLabels {
+			if v == "" {
+				delete(c.meta.Config.Labels, k)
+			} else {
+				c.meta.Config.Labels[k] = v
+			}
 		}
 	}
 
