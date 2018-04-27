@@ -15,6 +15,7 @@ import (
 	"github.com/alibaba/pouch/client"
 	"github.com/alibaba/pouch/daemon/config"
 	"github.com/alibaba/pouch/daemon/mgr"
+	"github.com/alibaba/pouch/pkg/sdnotify"
 
 	"github.com/sirupsen/logrus"
 )
@@ -75,6 +76,8 @@ func (s *Server) Start() (err error) {
 			errCh <- s.Serve(l)
 		}(l)
 	}
+
+	sdnotify.NotifySystemd()
 
 	// not error, will block and run forever.
 	return <-errCh
