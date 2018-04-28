@@ -23,6 +23,8 @@ func SdNotify(state string) error {
 		return SdNotifyNoSocket
 	}
 
+	defer os.Setenv("NOTIFY_SOCKET", "")
+
 	conn, err := net.DialUnix(socketAddr.Net, nil, socketAddr)
 	if err != nil {
 		return err
