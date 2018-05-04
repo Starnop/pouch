@@ -71,6 +71,9 @@ func cleanVmcommonDir() {
 					delete(existDir, oneMount.Source)
 				}
 			}
+			if err != nil {
+				continue
+			}
 			if afterWait {
 				for oneDir := range existDir {
 					logrus.Infof("remove dir %s because it is useless", oneDir)
@@ -80,9 +83,6 @@ func cleanVmcommonDir() {
 				afterWait = true
 				goto checkIfExist
 			}
-		}
-		if err != nil {
-			continue
 		}
 	}
 }

@@ -171,7 +171,7 @@ func prepare_network(requestedIP, defaultRoute, mask, nic string, networkMode st
 }
 
 func getAllContainers() (ca []string, err error) {
-	resp, err := pouchClient.Get("http://127.0.0.1/containers/json")
+	resp, err := pouchClient.Get("http://127.0.0.1/containers/json?all=true")
 	if err != nil {
 		return
 	}
