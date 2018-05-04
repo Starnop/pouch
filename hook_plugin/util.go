@@ -275,6 +275,7 @@ func escapseLableToEnvName(k string) string {
 	k = strings.Replace(k, " ", "_", -1)
 	k = strings.Replace(k, "\"", "_", -1)
 	k = strings.Replace(k, "'", "_", -1)
+	k = strings.Replace(k, ":", "_", -1)
 	return fmt.Sprintf("label__%s", k)
 }
 
