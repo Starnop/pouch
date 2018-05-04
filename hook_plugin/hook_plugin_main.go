@@ -25,12 +25,12 @@ var (
 	finalPoint, _   = time.Parse("2006-01-02T15:04:05.000Z", "2099-01-01T00:00:00.000Z")
 	ContainerPlugin ContPlugin
 	DaemonPlugin    DPlugin
+	homeDir         string
 )
 
 func (d DPlugin) PreStartHook() error {
 	logrus.Infof("pre-start hook in daemon is called")
 	configMap := make(map[string]interface{}, 8)
-	homeDir := ""
 	if _, ex := os.Stat("/etc/pouch/config.json"); ex == nil {
 		f, err := os.OpenFile("/etc/pouch/config.json", os.O_RDONLY, 0)
 		if err != nil {

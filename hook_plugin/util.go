@@ -170,14 +170,41 @@ func prepare_network(requestedIP, defaultRoute, mask, nic string, networkMode st
 	return nwName, nil
 }
 
+func getAllContainers() (ca []string, err error) {
+	resp, err := pouchClient.Get("http://127.0.0.1/containers/json")
+	if err != nil {
+		return
+	}
+	defer resp.Body.Close()
+	var respArr []Container
+	if err = json.NewDecoder(resp.Body).Decode(&respArr); err != nil {
+		return
+	}
+	for _, one := range respArr {
+		ca = append(ca, one.ID)
+	}
+	return
+}
+
+func getOneContainers(idOrName string) (c Container, err error) {
+	resp, err := pouchClient.Get(fmt.Sprintf("http://127.0.0.1/containers/%s/json", idOrName))
+	if err != nil {
+		return
+	}
+	defer resp.Body.Close()
+	if err = json.NewDecoder(resp.Body).Decode(&c); err != nil {
+		return
+	}
+	return
+}
+
 func getAllNetwork() (nr []NetworkResource, err error) {
 	resp, err := pouchClient.Get("http://127.0.0.1/v1.24/networks")
 	if err != nil {
 		return
 	}
 	defer resp.Body.Close()
-	var respNetworks []NetworkResource
-	if err = json.NewDecoder(resp.Body).Decode(&respNetworks); err != nil {
+	if err = json.NewDecoder(resp.Body).Decode(&nr); err != nil {
 		return
 	}
 	return
