@@ -78,6 +78,10 @@ func cleanVmcommonDir() {
 				for oneDir := range existDir {
 					logrus.Infof("remove dir %s because it is useless", oneDir)
 					os.RemoveAll(oneDir)
+					if ba, err := ioutil.ReadDir(filepath.Dir(oneDir)); err == nil && len(ba) == 0 {
+						logrus.Infof("remove dir %s because it is useless", filepath.Dir(oneDir))
+						os.RemoveAll(filepath.Dir(oneDir))
+					}
 				}
 			} else {
 				afterWait = true
