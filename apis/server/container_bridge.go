@@ -42,10 +42,6 @@ func (s *Server) renameContainer(ctx context.Context, rw http.ResponseWriter, re
 	oldName := mux.Vars(req)["name"]
 	newName := req.FormValue("name")
 
-	if utils.IsStale(ctx, req) && strings.HasPrefix(newName, "/") {
-		newName = strings.TrimPrefix(newName, "/")
-	}
-
 	if err := s.ContainerMgr.Rename(ctx, oldName, newName); err != nil {
 		return err
 	}
