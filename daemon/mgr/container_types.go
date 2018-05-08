@@ -61,6 +61,12 @@ type AttachConfig struct {
 	Stdout bool
 	Stderr bool
 
+	// For IO backend like http, we need to mux stdout & stderr
+	// if terminal is disabled.
+	// But for other IO backend, it is not necessary.
+	// So we should make it configurable.
+	MuxDisabled bool
+
 	// Attach using http.
 	Hijack  http.Hijacker
 	Upgrade bool
@@ -73,13 +79,6 @@ type AttachConfig struct {
 
 	// Attach to the container to get its log.
 	CriLogFile *os.File
-}
-
-// ContainerRemoveOption wraps the container remove interface params.
-type ContainerRemoveOption struct {
-	Force  bool
-	Volume bool
-	Link   bool
 }
 
 // ContainerListOption wraps the container list interface params.

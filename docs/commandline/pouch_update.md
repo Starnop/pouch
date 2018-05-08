@@ -37,12 +37,14 @@ $ cat /sys/fs/cgroup/memory/8649804cb63ff9713a2734d99728b9d6d5d1e4d2fbafb2b4dbdf
   -m, --memory string           Container memory limit
       --memory-swap string      Container swap limit
       --memory-swappiness int   Container memory swappiness [0, 100] (default -1)
+      --quota string            Update disk quota for container
       --restart string          Restart policy to apply when container exits
 ```
 
 ### Options inherited from parent commands
 
 ```
+  -D, --debug              Switch client log level to DEBUG mode
   -H, --host string        Specify connecting address of Pouch CLI (default "unix:///var/run/pouchd.sock")
       --tlscacert string   Specify CA file of TLS
       --tlscert string     Specify cert file of TLS

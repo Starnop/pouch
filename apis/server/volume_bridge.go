@@ -3,14 +3,12 @@ package server
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 
 	"github.com/alibaba/pouch/apis/types"
 	"github.com/alibaba/pouch/pkg/httputils"
 	"github.com/alibaba/pouch/pkg/randomid"
-	"github.com/pkg/errors"
-	"github.com/sirupsen/logrus"
+	volumetypes "github.com/alibaba/pouch/storage/volume/types"
 
 	"github.com/go-openapi/strfmt"
 	"github.com/gorilla/mux"
@@ -27,13 +25,6 @@ func (s *Server) createVolume(ctx context.Context, rw http.ResponseWriter, req *
 		return httputils.NewHTTPError(err, http.StatusBadRequest)
 	}
 
-	if s.VolumePlugin != nil {
-		logrus.Infof("invoke volume pre-create hook in plugin")
-		if err := s.VolumePlugin.PreVolumeCreate(config); err != nil {
-			return errors.Wrap(err, "failed to execute volume pre-create plugin point")
-		}
-	}
-
 	name := config.Name
 	driver := config.Driver
 	options := config.DriverOpts
@@ -44,7 +35,7 @@ func (s *Server) createVolume(ctx context.Context, rw http.ResponseWriter, req *
 	}
 
 	if driver == "" {
-		driver = "local"
+		driver = volumetypes.DefaultBackend
 	}
 
 	if err := s.VolumeMgr.Create(ctx, name, driver, options, labels); err != nil {

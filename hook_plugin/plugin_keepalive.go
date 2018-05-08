@@ -10,10 +10,12 @@ import (
 	"net/http"
 	"os"
 	osexec "os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/alibaba/pouch/apis/types"
 	"github.com/sirupsen/logrus"
 )
 
@@ -22,8 +24,70 @@ var collectdClient = &http.Client{Timeout: 20 * time.Second}
 
 func activePlugins() {
 	activePluginsOnce()
+	go cleanVmcommonDir()
+
 	for range time.NewTicker(time.Second * 30).C {
 		activePluginsOnce()
+	}
+}
+
+func cleanVmcommonDir() {
+	for range time.NewTicker(time.Minute * 5).C {
+		files, err := ioutil.ReadDir(homeDir)
+		if err != nil {
+			logrus.Errorf("read graph dir error. %s %v", homeDir, err)
+			continue
+		}
+		existDir := make(map[string]struct{})
+		for _, oneFile := range files {
+			if !oneFile.IsDir() {
+				continue
+			}
+			oneDir := filepath.Join(homeDir, oneFile.Name(), "top_foot_vm")
+			if fi, ex := os.Stat(oneDir); ex == nil && fi.IsDir() {
+				existDir[oneDir] = struct{}{}
+			}
+		}
+		var ca []string
+		var c types.Container
+		var afterWait bool
+	checkIfExist:
+		if len(existDir) > 0 {
+			if afterWait {
+				time.Sleep(time.Minute * 5)
+			}
+			ca, err = getAllContainers()
+			if err != nil {
+				logrus.Errorf("get all containers error %v", err)
+				continue
+			}
+			for _, id := range ca {
+				c, err = getOneContainers(id)
+				if err != nil {
+					logrus.Errorf("get one container error. %s %v", id, err)
+					break
+				}
+				for _, oneMount := range c.Mounts {
+					delete(existDir, oneMount.Source)
+				}
+			}
+			if err != nil {
+				continue
+			}
+			if afterWait {
+				for oneDir := range existDir {
+					logrus.Infof("remove dir %s because it is useless", oneDir)
+					os.RemoveAll(oneDir)
+					if ba, err := ioutil.ReadDir(filepath.Dir(oneDir)); err == nil && len(ba) == 0 {
+						logrus.Infof("remove dir %s because it is useless", filepath.Dir(oneDir))
+						os.RemoveAll(filepath.Dir(oneDir))
+					}
+				}
+			} else {
+				afterWait = true
+				goto checkIfExist
+			}
+		}
 	}
 }
 
