@@ -145,34 +145,35 @@ func (c ContPlugin) PreCreate(in io.ReadCloser) (io.ReadCloser, error) {
 			createConfig.Env = append(createConfig.Env, fmt.Sprintf("%s=%s", escapseLableToEnvName(k), v))
 		}
 
-		// generate quota id as needed
-		if createConfig.Labels["AutoQuotaId"] == "true" {
-			if createConfig.QuotaID == "" || createConfig.QuotaID == "0" {
-				qid := createConfig.Labels["QuotaId"]
-				if qid != "" && qid != "0" {
-					createConfig.QuotaID = qid
-				} else {
-					createConfig.QuotaID = "-1"
-				}
-			}
-		}
-
-		// set hostname to env
-		if getEnv(env, "HOSTNAME") == "" && createConfig.Hostname != "" {
-			found := false
-			for i, line := range createConfig.Env {
-				if strings.HasPrefix(line, "HOSTNAME=") {
-					createConfig.Env[i] = fmt.Sprintf("HOSTNAME=%s", createConfig.Hostname)
-					found = true
-					break
-				}
-			}
-			if !found {
-				createConfig.Env = append(createConfig.Env, fmt.Sprintf("HOSTNAME=%s", createConfig.Hostname))
-			}
-		}
 		createConfig.HostConfig.CapAdd = append(createConfig.HostConfig.CapAdd, "SYS_RESOURCE", "SYS_MODULE",
 			"SYS_PTRACE", "SYS_PACCT", "NET_ADMIN", "SYS_ADMIN")
+	}
+
+	// generate quota id as needed
+	if createConfig.Labels["AutoQuotaId"] == "true" {
+		if createConfig.QuotaID == "" || createConfig.QuotaID == "0" {
+			qid := createConfig.Labels["QuotaId"]
+			if qid != "" && qid != "0" {
+				createConfig.QuotaID = qid
+			} else {
+				createConfig.QuotaID = "-1"
+			}
+		}
+	}
+
+	// set hostname to env
+	if getEnv(env, "HOSTNAME") == "" && createConfig.Hostname != "" {
+		found := false
+		for i, line := range createConfig.Env {
+			if strings.HasPrefix(line, "HOSTNAME=") {
+				createConfig.Env[i] = fmt.Sprintf("HOSTNAME=%s", createConfig.Hostname)
+				found = true
+				break
+			}
+		}
+		if !found {
+			createConfig.Env = append(createConfig.Env, fmt.Sprintf("HOSTNAME=%s", createConfig.Hostname))
+		}
 	}
 
 	if len(createConfig.HostConfig.VolumesFrom) > 0 {
