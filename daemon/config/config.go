@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/alibaba/pouch/apis/types"
 	"github.com/alibaba/pouch/client"
 	"github.com/alibaba/pouch/cri"
 	"github.com/alibaba/pouch/network"
@@ -98,6 +99,15 @@ type Config struct {
 
 	// Pidfile keeps daemon pid
 	Pidfile string `json:"pidfile,omitempty"`
+
+	// Default log configuration
+	DefaultLogConfig types.HostConfigAO0LogConfig `json:"default-log-config, omitempty"`
+
+	// RegistryService
+	RegistryService types.RegistryServiceConfig `json:"registry-service, omitempty" `
+
+	// oom_score_adj for the daemon
+	OOMScoreAdjust int `json:"oom-score-adjust,omitempty"`
 }
 
 // Validate validates the user input config.
