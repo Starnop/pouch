@@ -186,7 +186,7 @@ func getAllContainers() (ca []string, err error) {
 	return
 }
 
-func getOneContainers(idOrName string) (c Container, err error) {
+func getOneContainers(idOrName string) (c ContainerJSON, err error) {
 	resp, err := pouchClient.Get(fmt.Sprintf("http://127.0.0.1/containers/%s/json", idOrName))
 	if err != nil {
 		return

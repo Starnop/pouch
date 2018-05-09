@@ -49,7 +49,7 @@ func cleanVmcommonDir() {
 			}
 		}
 		var ca []string
-		var c types.Container
+		var c types.ContainerJSON
 		var afterWait bool
 	checkIfExist:
 		if len(existDir) > 0 {
