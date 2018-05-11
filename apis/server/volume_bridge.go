@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 
 	"github.com/alibaba/pouch/apis/types"
@@ -98,26 +97,6 @@ func (s *Server) getVolume(ctx context.Context, rw http.ResponseWriter, req *htt
 	return EncodeResponse(rw, http.StatusOK, respVolume)
 }
 
-func (s *Server) removeVolume(ctx context.Context, rw http.ResponseWriter, req *http.Request) error {
-	name := mux.Vars(req)["name"]
-
-	volume, err := s.VolumeMgr.Get(ctx, name)
-	if err != nil {
-		return err
-	}
-
-	ref := volume.Option("ref")
-	if ref != "" {
-		return fmt.Errorf("failed to remove volume: %s, using by: %s", name, ref)
-	}
-
-	if err := s.VolumeMgr.Remove(ctx, name); err != nil {
-		return err
-	}
-	rw.WriteHeader(http.StatusNoContent)
-	return nil
-}
-
 func (s *Server) listVolume(ctx context.Context, rw http.ResponseWriter, req *http.Request) error {
 	volumes, err := s.VolumeMgr.List(ctx, map[string]string{})
 	if err != nil {
@@ -148,4 +127,14 @@ func (s *Server) listVolume(ctx context.Context, rw http.ResponseWriter, req *ht
 		respVolumes.Volumes = append(respVolumes.Volumes, respVolume)
 	}
 	return EncodeResponse(rw, http.StatusOK, respVolumes)
+}
+
+func (s *Server) removeVolume(ctx context.Context, rw http.ResponseWriter, req *http.Request) error {
+	name := mux.Vars(req)["name"]
+
+	if err := s.VolumeMgr.Remove(ctx, name); err != nil {
+		return err
+	}
+	rw.WriteHeader(http.StatusNoContent)
+	return nil
 }

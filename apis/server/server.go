@@ -12,7 +12,6 @@ import (
 	"syscall"
 
 	"github.com/alibaba/pouch/apis/plugins"
-	"github.com/alibaba/pouch/client"
 	"github.com/alibaba/pouch/daemon/config"
 	"github.com/alibaba/pouch/daemon/mgr"
 	"github.com/alibaba/pouch/pkg/sdnotify"
@@ -30,7 +29,6 @@ type Server struct {
 	NetworkMgr       mgr.NetworkMgr
 	listeners        []net.Listener
 	ContainerPlugin  plugins.ContainerPlugin
-	VolumePlugin     plugins.VolumePlugin
 	ManagerWhiteList map[string]struct{}
 	lock             sync.RWMutex
 }
@@ -50,7 +48,7 @@ func (s *Server) Start() (err error) {
 
 	var tlsConfig *tls.Config
 	if s.Config.TLS.Key != "" && s.Config.TLS.Cert != "" {
-		tlsConfig, err = client.GenTLSConfig(s.Config.TLS.Key, s.Config.TLS.Cert, s.Config.TLS.CA)
+		tlsConfig, err = httputils.GenTLSConfig(s.Config.TLS.Key, s.Config.TLS.Cert, s.Config.TLS.CA)
 		if err != nil {
 			return err
 		}
