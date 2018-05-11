@@ -14,6 +14,7 @@ import (
 	"github.com/alibaba/pouch/apis/plugins"
 	"github.com/alibaba/pouch/daemon/config"
 	"github.com/alibaba/pouch/daemon/mgr"
+	"github.com/alibaba/pouch/pkg/httputils"
 	"github.com/alibaba/pouch/pkg/sdnotify"
 
 	"github.com/sirupsen/logrus"

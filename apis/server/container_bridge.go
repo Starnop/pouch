@@ -41,6 +41,12 @@ func (s *Server) createContainer(ctx context.Context, rw http.ResponseWriter, re
 
 	name := req.FormValue("name")
 
+	if utils.IsStale(ctx, req) {
+		if strings.HasPrefix(name, "/") {
+			name = strings.TrimPrefix(name, "/")
+		}
+	}
+
 	// to do compensation to potential nil pointer after validation
 	if config.HostConfig == nil {
 		config.HostConfig = &types.HostConfig{}
@@ -80,6 +86,10 @@ func (s *Server) getContainer(ctx context.Context, rw http.ResponseWriter, req *
 		},
 	}
 
+	if utils.IsStale(ctx, req) {
+		container.Name = fmt.Sprintf("/%s", container.Name)
+	}
+
 	if meta.NetworkSettings != nil {
 		container.NetworkSettings = &types.NetworkSettings{
 			Networks: meta.NetworkSettings.Networks,
@@ -104,6 +114,25 @@ func (s *Server) getContainers(ctx context.Context, rw http.ResponseWriter, req 
 	}, option)
 	if err != nil {
 		return err
+	}
+
+	if filterStr := req.FormValue("filters"); filterStr != "" {
+		r := strings.NewReader(filterStr)
+		d := json.NewDecoder(r)
+		m := map[string][]string{}
+		if deprecatedErr := d.Decode(&m); deprecatedErr == nil {
+			if len(m["id"]) > 0 {
+				idSet := map[string]struct{}{}
+				for _, oneId := range m["id"] {
+					idSet[oneId] = struct{}{}
+				}
+				for i:=len(metas)-1; i>=0; i-- {
+					if _, ok := idSet[metas[i].ID]; !ok {
+						metas = append(metas[:i], metas[i+1:]...)
+					}
+				}
+			}
+		}
 	}
 
 	containerList := make([]types.Container, 0, len(metas))
@@ -223,6 +252,10 @@ func (s *Server) unpauseContainer(ctx context.Context, rw http.ResponseWriter, r
 func (s *Server) renameContainer(ctx context.Context, rw http.ResponseWriter, req *http.Request) error {
 	oldName := mux.Vars(req)["name"]
 	newName := req.FormValue("name")
+
+	if utils.IsStale(ctx, req) && strings.HasPrefix(newName, "/") {
+		newName = strings.TrimPrefix(newName, "/")
+	}
 
 	if err := s.ContainerMgr.Rename(ctx, oldName, newName); err != nil {
 		return err
