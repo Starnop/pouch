@@ -201,7 +201,6 @@ func (d *Daemon) Run() error {
 		VolumeMgr:       volumeMgr,
 		NetworkMgr:      networkMgr,
 		ContainerPlugin: d.containerPlugin,
-		VolumePlugin:    d.volumePlugin,
 	}
 
 	// init base network
