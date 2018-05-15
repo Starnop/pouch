@@ -123,11 +123,25 @@ func (e *ExecCommand) runExec(args []string) error {
 	}
 
 	wg.Wait()
+
+	execInfo, err := apiClient.ContainerExecInspect(ctx, createResp.ID)
+	if err != nil {
+		return err
+	}
+
+	code := execInfo.ExitCode
+	if code != 0 {
+		return ExitError{Code: int(code)}
+	}
+
 	return nil
 }
 
 // execExample shows examples in exec command, and is used in auto-generated cli docs.
-// TODO: add example
 func execExample() string {
-	return ""
+	return `$ pouch exec -it 25bf50 ps
+PID   USER     TIME  COMMAND
+    1 root      0:00 /bin/sh
+   38 root      0:00 ps
+`
 }

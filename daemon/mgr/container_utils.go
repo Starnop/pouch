@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/alibaba/pouch/apis/types"
+	networktypes "github.com/alibaba/pouch/network/types"
 	"github.com/alibaba/pouch/pkg/errtypes"
 	"github.com/alibaba/pouch/pkg/meta"
 	"github.com/alibaba/pouch/pkg/randomid"
@@ -38,12 +39,12 @@ func (mgr *ContainerManager) containerID(nameOrPrefix string) (string, error) {
 	}
 	obj = objs[0]
 
-	containerMeta, ok := obj.(*ContainerMeta)
+	con, ok := obj.(*Container)
 	if !ok {
 		return "", fmt.Errorf("failed to get container info, invalid meta's type")
 	}
 
-	return containerMeta.ID, nil
+	return con.ID, nil
 }
 
 func (mgr *ContainerManager) container(nameOrPrefix string) (*Container, error) {
@@ -103,14 +104,37 @@ func (mgr *ContainerManager) generateName(id string) string {
 	return name
 }
 
-func parseSecurityOpts(meta *ContainerMeta, securityOpts []string) error {
+// BuildContainerEndpoint is used to build container's endpoint config.
+func BuildContainerEndpoint(c *Container) *networktypes.Endpoint {
+	return &networktypes.Endpoint{
+		Owner:           c.ID,
+		Hostname:        c.Config.Hostname,
+		Domainname:      c.Config.Domainname,
+		HostsPath:       c.HostsPath,
+		ExtraHosts:      c.HostConfig.ExtraHosts,
+		HostnamePath:    c.HostnamePath,
+		ResolvConfPath:  c.ResolvConfPath,
+		NetworkDisabled: c.Config.NetworkDisabled,
+		NetworkMode:     c.HostConfig.NetworkMode,
+		DNS:             c.HostConfig.DNS,
+		DNSOptions:      c.HostConfig.DNSOptions,
+		DNSSearch:       c.HostConfig.DNSSearch,
+		MacAddress:      c.Config.MacAddress,
+		PublishAllPorts: c.HostConfig.PublishAllPorts,
+		ExposedPorts:    c.Config.ExposedPorts,
+		PortBindings:    c.HostConfig.PortBindings,
+		NetworkConfig:   c.NetworkSettings,
+	}
+}
+
+func parseSecurityOpts(c *Container, securityOpts []string) error {
 	var (
 		labelOpts []string
 		err       error
 	)
 	for _, securityOpt := range securityOpts {
 		if securityOpt == "no-new-privileges" {
-			meta.NoNewPrivileges = true
+			c.NoNewPrivileges = true
 			continue
 		}
 		fields := strings.SplitN(securityOpt, "=", 2)
@@ -121,15 +145,15 @@ func parseSecurityOpts(meta *ContainerMeta, securityOpts []string) error {
 		switch key {
 		// TODO: handle other security options.
 		case "apparmor":
-			meta.AppArmorProfile = value
+			c.AppArmorProfile = value
 		case "seccomp":
-			meta.SeccompProfile = value
+			c.SeccompProfile = value
 		case "no-new-privileges":
 			noNewPrivileges, err := strconv.ParseBool(value)
 			if err != nil {
 				return fmt.Errorf("invalid --security-opt: %q", securityOpt)
 			}
-			meta.NoNewPrivileges = noNewPrivileges
+			c.NoNewPrivileges = noNewPrivileges
 		case "label":
 			labelOpts = append(labelOpts, value)
 		default:
@@ -140,7 +164,7 @@ func parseSecurityOpts(meta *ContainerMeta, securityOpts []string) error {
 	if len(labelOpts) == 0 {
 		return nil
 	}
-	meta.ProcessLabel, meta.MountLabel, err = label.InitLabels(labelOpts)
+	c.ProcessLabel, c.MountLabel, err = label.InitLabels(labelOpts)
 	if err != nil {
 		return fmt.Errorf("failed to init labels: %v", err)
 	}

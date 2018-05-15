@@ -66,39 +66,43 @@ func (s *Server) createContainer(ctx context.Context, rw http.ResponseWriter, re
 func (s *Server) getContainer(ctx context.Context, rw http.ResponseWriter, req *http.Request) error {
 	name := mux.Vars(req)["name"]
 
-	meta, err := s.ContainerMgr.Get(ctx, name)
+	c, err := s.ContainerMgr.Get(ctx, name)
 	if err != nil {
 		return err
 	}
 
-	container := types.ContainerJSON{
-		ID:          meta.ID,
-		Name:        meta.Name,
-		Image:       meta.Config.Image,
-		Created:     meta.Created,
-		State:       meta.State,
-		Config:      meta.Config,
-		HostConfig:  meta.HostConfig,
-		Snapshotter: meta.Snapshotter,
-		GraphDriver: &types.GraphDriverData{
-			Name: meta.Snapshotter.Name,
-			Data: meta.Snapshotter.Data,
-		},
-	}
-
-	if utils.IsStale(ctx, req) {
-		container.Name = fmt.Sprintf("/%s", container.Name)
-	}
-
-	if meta.NetworkSettings != nil {
-		container.NetworkSettings = &types.NetworkSettings{
-			Networks: meta.NetworkSettings.Networks,
+	var netSettings *types.NetworkSettings
+	if c.NetworkSettings != nil {
+		netSettings = &types.NetworkSettings{
+			Networks: c.NetworkSettings.Networks,
 		}
 	}
 
-	container.Mounts = []types.MountPoint{}
-	for _, mp := range meta.Mounts {
-		container.Mounts = append(container.Mounts, *mp)
+	mounts := []types.MountPoint{}
+	for _, mp := range c.Mounts {
+		mounts = append(mounts, *mp)
+	}
+
+	container := types.ContainerJSON{
+		ID:          c.ID,
+		Name:        c.Name,
+		Image:       c.Config.Image,
+		Created:     c.Created,
+		State:       c.State,
+		Config:      c.Config,
+		HostConfig:  c.HostConfig,
+		Snapshotter: c.Snapshotter,
+		GraphDriver: &types.GraphDriverData{
+			Name: c.Snapshotter.Name,
+			Data: c.Snapshotter.Data,
+		},
+		Mounts:          mounts,
+		NetworkSettings: netSettings,
+	}
+
+
+	if utils.IsStale(ctx, req) {
+		container.Name = fmt.Sprintf("/%s", container.Name)
 	}
 
 	return EncodeResponse(rw, http.StatusOK, container)
@@ -109,7 +113,7 @@ func (s *Server) getContainers(ctx context.Context, rw http.ResponseWriter, req 
 		All: httputils.BoolValue(req, "all"),
 	}
 
-	metas, err := s.ContainerMgr.List(ctx, func(meta *mgr.ContainerMeta) bool {
+	cons, err := s.ContainerMgr.List(ctx, func(c *mgr.Container) bool {
 		return true
 	}, option)
 	if err != nil {
@@ -126,46 +130,48 @@ func (s *Server) getContainers(ctx context.Context, rw http.ResponseWriter, req 
 				for _, oneId := range m["id"] {
 					idSet[oneId] = struct{}{}
 				}
-				for i:=len(metas)-1; i>=0; i-- {
-					if _, ok := idSet[metas[i].ID]; !ok {
-						metas = append(metas[:i], metas[i+1:]...)
+				for i:=len(cons)-1; i>=0; i-- {
+					if _, ok := idSet[cons[i].ID]; !ok {
+						cons = append(cons[:i], cons[i+1:]...)
 					}
 				}
 			}
 		}
 	}
 
-	containerList := make([]types.Container, 0, len(metas))
+	containerList := make([]types.Container, 0, len(cons))
 
-	for _, m := range metas {
-		status, err := m.FormatStatus()
+	for _, c := range cons {
+		status, err := c.FormatStatus()
 		if err != nil {
 			return err
 		}
 
-		t, err := time.Parse(utils.TimeLayout, m.Created)
+		t, err := time.Parse(utils.TimeLayout, c.Created)
 		if err != nil {
 			return err
 		}
 
-		container := types.Container{
-			ID:         m.ID,
-			Names:      []string{m.Name},
-			Image:      m.Config.Image,
-			Command:    strings.Join(m.Config.Cmd, " "),
-			Status:     status,
-			Created:    t.UnixNano(),
-			Labels:     m.Config.Labels,
-			HostConfig: m.HostConfig,
-		}
-
-		if m.NetworkSettings != nil {
-			container.NetworkSettings = &types.ContainerNetworkSettings{
-				Networks: m.NetworkSettings.Networks,
+		var netSettings *types.ContainerNetworkSettings
+		if c.NetworkSettings != nil {
+			netSettings = &types.ContainerNetworkSettings{
+				Networks: c.NetworkSettings.Networks,
 			}
 		}
 
-		containerList = append(containerList, container)
+		singleCon := types.Container{
+			ID:              c.ID,
+			Names:           []string{c.Name},
+			Image:           c.Config.Image,
+			Command:         strings.Join(c.Config.Cmd, " "),
+			Status:          status,
+			Created:         t.UnixNano(),
+			Labels:          c.Config.Labels,
+			HostConfig:      c.HostConfig,
+			NetworkSettings: netSettings,
+		}
+
+		containerList = append(containerList, singleCon)
 	}
 	return EncodeResponse(rw, http.StatusOK, containerList)
 }
@@ -344,9 +350,27 @@ func (s *Server) topContainer(ctx context.Context, rw http.ResponseWriter, req *
 }
 
 func (s *Server) logsContainer(ctx context.Context, rw http.ResponseWriter, req *http.Request) error {
-	//opts := &types.ContainerLogsOptions{}
+	opts := &types.ContainerLogsOptions{
+		ShowStdout: httputils.BoolValue(req, "stdout"),
+		ShowStderr: httputils.BoolValue(req, "stderr"),
 
-	// TODO
+		Tail:       req.Form.Get("tail"),
+		Since:      req.Form.Get("since"),
+		Until:      req.Form.Get("until"),
+		Follow:     httputils.BoolValue(req, "follow"),
+		Timestamps: httputils.BoolValue(req, "timestamps"),
+
+		// TODO: support the details
+		// Details:    httputils.BoolValue(r, "details"),
+	}
+
+	name := mux.Vars(req)["name"]
+	msgCh, tty, err := s.ContainerMgr.Logs(ctx, name, opts)
+	if err != nil {
+		return err
+	}
+
+	writeLogStream(ctx, rw, tty, opts, msgCh)
 	return nil
 }
 

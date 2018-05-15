@@ -9,7 +9,8 @@ import (
 
 	"github.com/alibaba/pouch/apis/plugins"
 	"github.com/alibaba/pouch/apis/server"
-	cri "github.com/alibaba/pouch/cri/service"
+	criservice "github.com/alibaba/pouch/cri/service"
+	cri "github.com/alibaba/pouch/cri/src"
 	"github.com/alibaba/pouch/ctrd"
 	"github.com/alibaba/pouch/daemon/config"
 	"github.com/alibaba/pouch/daemon/mgr"
@@ -33,9 +34,9 @@ type Daemon struct {
 	imageMgr        mgr.ImageMgr
 	volumeMgr       mgr.VolumeMgr
 	networkMgr      mgr.NetworkMgr
-	criMgr          mgr.CriMgr
+	criMgr          cri.CriMgr
 	server          server.Server
-	criService      *cri.Service
+	criService      *criservice.Service
 	containerPlugin plugins.ContainerPlugin
 	daemonPlugin    plugins.DaemonPlugin
 	volumePlugin    plugins.VolumePlugin
@@ -55,7 +56,7 @@ func NewDaemon(cfg *config.Config) *Daemon {
 		Buckets: []meta.Bucket{
 			{
 				Name: meta.MetaJSONFile,
-				Type: reflect.TypeOf(mgr.ContainerMeta{}),
+				Type: reflect.TypeOf(mgr.Container{}),
 			},
 		},
 	})
@@ -177,17 +178,18 @@ func (d *Daemon) Run() error {
 	}
 	d.volumeMgr = volumeMgr
 
-	networkMgr, err := internal.GenNetworkMgr(d.config, d)
-	if err != nil {
-		return err
-	}
-	d.networkMgr = networkMgr
-
 	containerMgr, err := internal.GenContainerMgr(ctx, d)
 	if err != nil {
 		return err
 	}
 	d.containerMgr = containerMgr
+
+	networkMgr, err := internal.GenNetworkMgr(d.config, d)
+	if err != nil {
+		return err
+	}
+	d.networkMgr = networkMgr
+	containerMgr.(*mgr.ContainerManager).NetworkMgr = networkMgr
 
 	if err := d.addSystemLabels(); err != nil {
 		return err
@@ -351,7 +353,7 @@ func (d *Daemon) RunCriService(stopCh chan error) {
 	}
 	d.criMgr = criMgr
 
-	d.criService, err = cri.NewService(d.config, criMgr)
+	d.criService, err = criservice.NewService(d.config, criMgr)
 	if err != nil {
 		return
 	}

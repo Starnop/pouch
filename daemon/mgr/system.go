@@ -61,11 +61,11 @@ func (mgr *SystemManager) Info() (types.SystemInfo, error) {
 
 	var cRunning, cPaused, cStopped int64
 	_ = mgr.store.ForEach(func(obj meta.Object) error {
-		containerMeta, ok := obj.(*ContainerMeta)
+		c, ok := obj.(*Container)
 		if !ok {
 			return nil
 		}
-		status := containerMeta.State.Status
+		status := c.State.Status
 		switch status {
 		case types.StatusRunning:
 			atomic.AddInt64(&cRunning, 1)
@@ -127,7 +127,7 @@ func (mgr *SystemManager) Info() (types.SystemInfo, error) {
 		KernelVersion:      kernelVersion,
 		Labels:             mgr.config.Labels,
 		LiveRestoreEnabled: true,
-		LoggingDriver:      mgr.config.DefaultLogConfig.Type,
+		LoggingDriver:      mgr.config.DefaultLogConfig.LogDriver,
 		LxcfsEnabled:       mgr.config.IsLxcfsEnabled,
 		MemTotal:           totalMem,
 		Name:               hostname,

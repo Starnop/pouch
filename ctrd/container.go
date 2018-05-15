@@ -349,21 +349,17 @@ func (c *Client) createContainer(ctx context.Context, ref, id string, container 
 	img, err := wrapperCli.client.GetImage(ctx, ref)
 	if err != nil {
 		if errdefs.IsNotFound(err) {
-			return errors.Wrap(errtypes.ErrNotfound, "image")
+			return errors.Wrapf(errtypes.ErrNotfound, "image %s", ref)
 		}
-		return errors.Wrapf(err, "failed to get image: %s", ref)
+		return errors.Wrapf(err, "failed to get image %s", ref)
 	}
 
-	logrus.Infof("success to get image: %s, container id: %s", img.Name(), id)
+	logrus.Infof("success to get image %s, container id %s", img.Name(), id)
 
 	// create container
 	specOptions := []oci.SpecOpts{
-		// oci.WithImageConfig(img),
 		oci.WithRootFSPath("rootfs"),
 	}
-	// if args := container.Spec.Process.Args; len(args) != 0 {
-	// 	specOptions = append(specOptions, oci.WithProcessArgs(args...))
-	// }
 
 	options := []containerd.NewContainerOpts{
 		containerd.WithSpec(container.Spec, specOptions...),
@@ -375,13 +371,13 @@ func (c *Client) createContainer(ctx context.Context, ref, id string, container 
 
 	// check snapshot exist or not.
 	if _, err := c.GetSnapshot(ctx, id); err != nil {
-		return errors.Wrapf(err, "failed to create container, id: %s", id)
+		return errors.Wrapf(err, "failed to create container %s", id)
 	}
 	options = append(options, containerd.WithSnapshot(id))
 
 	nc, err := wrapperCli.client.NewContainer(ctx, id, options...)
 	if err != nil {
-		return errors.Wrapf(err, "failed to create container, id: %s", id)
+		return errors.Wrapf(err, "failed to create container %s", id)
 	}
 
 	defer func() {
