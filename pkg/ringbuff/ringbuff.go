@@ -3,11 +3,14 @@ package ringbuff
 import (
 	"sync"
 	"time"
+
+	"github.com/sirupsen/logrus"
 )
 
 type ringNode struct {
 	next  *ringNode
 	value interface{}
+	no    int
 }
 
 // RingBuff implements a circular list.
@@ -27,7 +30,7 @@ func New(n int) *RingBuff {
 	)
 
 	for i := 0; i < n; i++ {
-		p := &ringNode{}
+		p := &ringNode{no: i}
 
 		if last != nil {
 			last.next = p
@@ -40,11 +43,14 @@ func New(n int) *RingBuff {
 
 	last.next = first
 
-	return &RingBuff{
+	r := &RingBuff{
 		pushPtr: first,
 		popPtr:  first,
 		cond:    sync.NewCond(&sync.Mutex{}),
 	}
+	logrus.Debug("%p init stat %d %d", r, first.no, first.no)
+
+	return r
 }
 
 // Push puts a elemnet into RingBuff and returns the status of covering or not.
@@ -66,12 +72,11 @@ func (r *RingBuff) Push(value interface{}) bool {
 	r.pushPtr.value = value
 
 	// wakes the "Pop" goroutine waiting on "cond".
-	if r.pushPtr == r.popPtr {
-		r.cond.Broadcast()
-	}
+	r.cond.Broadcast()
 
 	// move pointer to next node.
 	r.pushPtr = r.pushPtr.next
+	logrus.Debug("%p after push %d %d", r, r.pushPtr.no, r.popPtr.no)
 
 	return cover
 }
@@ -86,6 +91,7 @@ func (r *RingBuff) Pop() (interface{}, bool) {
 		r.popPtr.value = nil // if we readed the node, must set nil to it.
 		// move to next node.
 		r.popPtr = r.popPtr.next
+		logrus.Debug("%p after pop has data %d %d %v", r, r.pushPtr.no, r.popPtr.no, v)
 
 		// NOTICE: unlock
 		r.Unlock()
@@ -113,13 +119,15 @@ func (r *RingBuff) Pop() (interface{}, bool) {
 		// NOTICE: Wait() return, need to hold lock again.
 		r.Lock()
 	}
-	r.cond.L.Unlock()
 
 	v := r.popPtr.value
 	isClosed := r.closed
 	r.popPtr.value = nil // if we readed the node,  must set nil to it.
 	// move to next node.
 	r.popPtr = r.popPtr.next
+	logrus.Debug("%p after pop end wait %d %d %v", r, r.pushPtr.no, r.popPtr.no, v)
+
+	r.cond.L.Unlock()
 
 	r.Unlock()
 
