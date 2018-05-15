@@ -103,8 +103,8 @@ func (c ContPlugin) PreCreate(in io.ReadCloser) (io.ReadCloser, error) {
 	}
 
 	// setup disk quota
-	if diskQuota := createConfig.Labels["DiskQuota"]; diskQuota != "" &&
-		len(createConfig.DiskQuota) == 0 {
+	diskQuota := createConfig.Labels["DiskQuota"]
+	if diskQuota != "" && len(createConfig.DiskQuota) == 0 {
 		if createConfig.DiskQuota == nil {
 			createConfig.DiskQuota = make(map[string]string)
 		}
@@ -150,7 +150,8 @@ func (c ContPlugin) PreCreate(in io.ReadCloser) (io.ReadCloser, error) {
 	}
 
 	// generate quota id as needed
-	if createConfig.Labels["AutoQuotaId"] == "true" {
+	if createConfig.Labels["AutoQuotaId"] == "true" || (diskQuota != "" &&
+		!strings.Contains(diskQuota, ";") && !strings.Contains(diskQuota, "=")) {
 		if createConfig.QuotaID == "" || createConfig.QuotaID == "0" {
 			qid := createConfig.Labels["QuotaId"]
 			if qid != "" && qid != "0" {
