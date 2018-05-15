@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/alibaba/pouch/apis/plugins"
 	"github.com/alibaba/pouch/daemon/config"
@@ -71,6 +72,10 @@ func (s *Server) Start() (err error) {
 			s := &http.Server{
 				Handler:  router,
 				ErrorLog: log.New(stdFilterLogWriter, "", 0),
+				ReadTimeout: time.Minute * 10,
+				ReadHeaderTimeout: time.Minute * 10,
+				WriteTimeout: time.Minute * 10,
+				IdleTimeout: time.Minute * 10,
 			}
 			errCh <- s.Serve(l)
 		}(l)
