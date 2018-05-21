@@ -36,7 +36,6 @@ import (
 	"github.com/go-openapi/strfmt"
 	"github.com/imdario/mergo"
 	"github.com/magiconair/properties"
-	digest "github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -95,7 +94,7 @@ type ContainerMgr interface {
 	// Remove removes a container, it may be running or stopped and so on.
 	Remove(ctx context.Context, name string, option *types.ContainerRemoveOptions) error
 
-	// 2. The following five functions is related to containr exec.
+	// 2. The following five functions is related to container exec.
 
 	// CreateExec creates exec process's environment.
 	CreateExec(ctx context.Context, name string, config *types.ExecCreateConfig) (string, error)
@@ -1674,16 +1673,6 @@ func (mgr *ContainerManager) exitedAndRelease(id string, m *ctrd.Message) error 
 // execExitedAndRelease be register into ctrd as a callback function, when the exec process in a container
 // exited, "ctrd" will call it to release resource and so on.
 func (mgr *ContainerManager) execExitedAndRelease(id string, m *ctrd.Message) error {
-	if io := mgr.IOs.Get(id); io != nil {
-		if err := m.RawError(); err != nil {
-			fmt.Fprintf(io.Stdout, "%v\n", err)
-		}
-
-		// close io
-		io.Close()
-		mgr.IOs.Remove(id)
-	}
-
 	v, ok := mgr.ExecProcesses.Get(id).Result()
 	if !ok {
 		return errors.Wrap(errtypes.ErrNotfound, "to be exec process: "+id)
@@ -1696,7 +1685,16 @@ func (mgr *ContainerManager) execExitedAndRelease(id string, m *ctrd.Message) er
 	execConfig.Running = false
 	execConfig.Error = m.RawError()
 
-	// TODO: GC invalid mgr.ExecProcess.
+	if io := mgr.IOs.Get(id); io != nil {
+		if err := m.RawError(); err != nil {
+			fmt.Fprintf(io.Stdout, "%v\n", err)
+		}
+
+		// close io
+		io.Close()
+		mgr.IOs.Remove(id)
+	}
+
 	return nil
 }
 
@@ -1920,7 +1918,7 @@ func (mgr *ContainerManager) getMountPointFromImage(ctx context.Context, meta *C
 	var err error
 
 	// parse volumes from image
-	image, err := mgr.ImageMgr.GetImage(ctx, strings.TrimPrefix(meta.Image, digest.Canonical.String()+":"))
+	image, err := mgr.ImageMgr.GetImage(ctx, meta.Image)
 	if err != nil {
 		return errors.Wrapf(err, "failed to get image: %s", meta.Image)
 	}
