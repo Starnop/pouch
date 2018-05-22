@@ -30,6 +30,7 @@ import (
 	"github.com/alibaba/pouch/storage/quota"
 	volumetypes "github.com/alibaba/pouch/storage/volume/types"
 
+	containerdtypes "github.com/containerd/containerd/api/types"
 	"github.com/containerd/containerd/errdefs"
 	"github.com/containerd/containerd/namespaces"
 	"github.com/docker/libnetwork"
@@ -72,6 +73,9 @@ type ContainerMgr interface {
 
 	// Unpause a container.
 	Unpause(ctx context.Context, name string) error
+
+	// Stats of a container.
+	Stats(ctx context.Context, name string) (*containerdtypes.Metric, error)
 
 	// Attach a container.
 	Attach(ctx context.Context, name string, attach *AttachConfig) error
@@ -681,6 +685,23 @@ func (mgr *ContainerManager) Unpause(ctx context.Context, name string) error {
 	}
 
 	return nil
+}
+
+// Stats gets the stat of a container.
+func (mgr *ContainerManager) Stats(ctx context.Context, name string) (*containerdtypes.Metric, error) {
+	var (
+		err error
+		c   *Container
+	)
+
+	if c, err = mgr.container(name); err != nil {
+		return nil, err
+	}
+
+	c.Lock()
+	defer c.Unlock()
+
+	return mgr.Client.ContainerStats(ctx, c.ID)
 }
 
 // Attach attachs a container's io.

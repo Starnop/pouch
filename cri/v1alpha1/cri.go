@@ -12,6 +12,7 @@ import (
 	"time"
 
 	apitypes "github.com/alibaba/pouch/apis/types"
+	"github.com/alibaba/pouch/ctrd"
 	"github.com/alibaba/pouch/daemon/config"
 	"github.com/alibaba/pouch/daemon/mgr"
 	"github.com/alibaba/pouch/pkg/errtypes"
@@ -60,6 +61,15 @@ const (
 
 	// resolvConfPath is the abs path of resolv.conf on host or container.
 	resolvConfPath = "/etc/resolv.conf"
+
+	// statsCollectPeriod is the time duration we sync stats from containerd.
+	statsCollectPeriod = 10
+
+	// defaultSnapshotterName is the default Snapshotter name.
+	defaultSnapshotterName = "overlayfs"
+
+	// snapshotPlugin implements a snapshotter.
+	snapshotPlugin = "io.containerd.snapshotter.v1"
 )
 
 var (
@@ -85,6 +95,9 @@ type CriManager struct {
 	ImageMgr     mgr.ImageMgr
 	CniMgr       CniMgr
 
+	// Client is used to interact with containerd.
+	Client ctrd.APIClient
+
 	// StreamServer is the stream server of CRI serves container streaming request.
 	StreamServer Server
 
@@ -95,10 +108,16 @@ type CriManager struct {
 	SandboxImage string
 	// SandboxStore stores the configuration of sandboxes.
 	SandboxStore *meta.Store
+
+	// SnapshotStore stores information of all snapshots.
+	SnapshotStore *mgr.SnapshotStore
+
+	// ImageFSUUID is the device uuid of image filesystem.
+	ImageFSUUID string
 }
 
 // NewCriManager creates a brand new cri manager.
-func NewCriManager(config *config.Config, ctrMgr mgr.ContainerMgr, imgMgr mgr.ImageMgr) (CriMgr, error) {
+func NewCriManager(config *config.Config, cli ctrd.APIClient, ctrMgr mgr.ContainerMgr, imgMgr mgr.ImageMgr) (CriMgr, error) {
 	streamServer, err := newStreamServer(ctrMgr, streamServerAddress, streamServerPort)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create stream server for cri manager: %v", err)
@@ -108,9 +127,11 @@ func NewCriManager(config *config.Config, ctrMgr mgr.ContainerMgr, imgMgr mgr.Im
 		ContainerMgr:   ctrMgr,
 		ImageMgr:       imgMgr,
 		CniMgr:         NewCniManager(&config.CriConfig),
+		Client:         cli,
 		StreamServer:   streamServer,
 		SandboxBaseDir: path.Join(config.HomeDir, "sandboxes"),
 		SandboxImage:   config.CriConfig.SandboxImage,
+		SnapshotStore:  mgr.NewSnapshotStore(),
 	}
 
 	c.SandboxStore, err = meta.NewStore(meta.Config{
@@ -126,6 +147,19 @@ func NewCriManager(config *config.Config, ctrMgr mgr.ContainerMgr, imgMgr mgr.Im
 	if err != nil {
 		return nil, fmt.Errorf("failed to create sandbox meta store: %v", err)
 	}
+
+	imageFSPath := imageFSPath(path.Join(config.HomeDir, "containerd/root"), defaultSnapshotterName)
+	c.ImageFSUUID, err = getDeviceUUID(imageFSPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get imagefs uuid of %q: %v", imageFSPath, err)
+	}
+
+	snapshotsSyncer := mgr.NewSnapshotsSyncer(
+		c.SnapshotStore,
+		c.Client,
+		time.Duration(statsCollectPeriod)*time.Second,
+	)
+	snapshotsSyncer.Start()
 
 	return NewCriWrapper(c), nil
 }
@@ -679,12 +713,55 @@ func (c *CriManager) ContainerStatus(ctx context.Context, r *runtime.ContainerSt
 // ContainerStats returns stats of the container. If the container does not
 // exist, the call returns an error.
 func (c *CriManager) ContainerStats(ctx context.Context, r *runtime.ContainerStatsRequest) (*runtime.ContainerStatsResponse, error) {
-	return nil, fmt.Errorf("ContainerStats Not Implemented Yet")
+	containerID := r.GetContainerId()
+
+	container, err := c.ContainerMgr.Get(ctx, containerID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get container %q with error: %v", containerID, err)
+	}
+
+	stats, err := c.ContainerMgr.Stats(ctx, containerID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get stats of container %q with error: %v", containerID, err)
+	}
+
+	cs, err := c.getContainerMetrics(container, stats)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode container metrics: %v", err)
+	}
+
+	return &runtime.ContainerStatsResponse{Stats: cs}, nil
 }
 
 // ListContainerStats returns stats of all running containers.
 func (c *CriManager) ListContainerStats(ctx context.Context, r *runtime.ListContainerStatsRequest) (*runtime.ListContainerStatsResponse, error) {
-	return nil, fmt.Errorf("ListContainerStats Not Implemented Yet")
+	opts := &mgr.ContainerListOption{All: true}
+	filter := func(c *mgr.Container) bool {
+		return true
+	}
+	containers, err := c.ContainerMgr.List(ctx, filter, opts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list containers: %v", err)
+	}
+
+	result := &runtime.ListContainerStatsResponse{}
+	for _, container := range containers {
+		stats, err := c.ContainerMgr.Stats(ctx, container.ID)
+		if err != nil {
+			logrus.Errorf("failed to get stats of container %q: %v", container.ID, err)
+			continue
+		}
+
+		cs, err := c.getContainerMetrics(container, stats)
+		if err != nil {
+			logrus.Errorf("failed to decode metrics of container %q: %v", container.ID, err)
+			continue
+		}
+
+		result.Stats = append(result.Stats, cs)
+	}
+
+	return result, nil
 }
 
 // UpdateContainerResources updates ContainerConfig of the container.
@@ -907,5 +984,25 @@ func (c *CriManager) RemoveImage(ctx context.Context, r *runtime.RemoveImageRequ
 
 // ImageFsInfo returns information of the filesystem that is used to store images.
 func (c *CriManager) ImageFsInfo(ctx context.Context, r *runtime.ImageFsInfoRequest) (*runtime.ImageFsInfoResponse, error) {
-	return nil, fmt.Errorf("ImageFsInfo Not Implemented Yet")
+	snapshots := c.SnapshotStore.List()
+	timestamp := time.Now().UnixNano()
+	var usedBytes, inodesUsed uint64
+	for _, sn := range snapshots {
+		// Use the oldest timestamp as the timestamp of imagefs info.
+		if sn.Timestamp < timestamp {
+			timestamp = sn.Timestamp
+		}
+		usedBytes += sn.Size
+		inodesUsed += sn.Inodes
+	}
+	return &runtime.ImageFsInfoResponse{
+		ImageFilesystems: []*runtime.FilesystemUsage{
+			{
+				Timestamp:  timestamp,
+				StorageId:  &runtime.StorageIdentifier{Uuid: c.ImageFSUUID},
+				UsedBytes:  &runtime.UInt64Value{Value: usedBytes},
+				InodesUsed: &runtime.UInt64Value{Value: inodesUsed},
+			},
+		},
+	}, nil
 }

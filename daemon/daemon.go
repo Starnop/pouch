@@ -208,7 +208,7 @@ func (d *Daemon) Run() error {
 	}()
 
 	criStopCh := make(chan error)
-	go criservice.RunCriService(d.config, d.containerMgr, d.imageMgr, criStopCh)
+	go criservice.RunCriService(d.config,  d.Containerd(),d.containerMgr, d.imageMgr, criStopCh)
 
 	err = <-criStopCh
 	if err != nil {
