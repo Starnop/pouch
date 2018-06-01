@@ -188,6 +188,12 @@ func (d *Daemon) Run() error {
 	d.networkMgr = networkMgr
 	containerMgr.(*mgr.ContainerManager).NetworkMgr = networkMgr
 
+	// Notes(ziren): we must call containerMgr.Restore after NetworkMgr initialized,
+	// otherwize will panic
+	if err := containerMgr.Restore(ctx); err != nil {
+		return err
+	}
+
 	if err := d.addSystemLabels(); err != nil {
 		return err
 	}

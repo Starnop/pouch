@@ -2,6 +2,7 @@ package ctrd
 
 import (
 	"context"
+	"io"
 	"time"
 
 	"github.com/alibaba/pouch/apis/types"
@@ -9,6 +10,7 @@ import (
 	"github.com/alibaba/pouch/pkg/jsonstream"
 
 	"github.com/containerd/containerd"
+	ctrdmetaimages "github.com/containerd/containerd/images"
 	"github.com/containerd/containerd/mount"
 	"github.com/containerd/containerd/snapshots"
 )
@@ -46,6 +48,8 @@ type ContainerAPIClient interface {
 	// ResizeContainer changes the size of the TTY of the init process running
 	// in the container to the given height and width.
 	ResizeContainer(ctx context.Context, id string, opts types.ResizeOptions) error
+	// WaitContainer waits until container's status is stopped.
+	WaitContainer(ctx context.Context, id string) (types.ContainerWaitOKBody, error)
 	// UpdateResources updates the configurations of a container.
 	UpdateResources(ctx context.Context, id string, resources types.Resources) error
 	// SetExitHooks specified the handlers of container exit.
@@ -56,6 +60,8 @@ type ContainerAPIClient interface {
 
 // ImageAPIClient provides access to containerd image features.
 type ImageAPIClient interface {
+	// CreateImageReference creates the image data into meta data in the containerd.
+	CreateImageReference(ctx context.Context, img ctrdmetaimages.Image) (ctrdmetaimages.Image, error)
 	// GetImage returns containerd.Image by the given reference.
 	GetImage(ctx context.Context, ref string) (containerd.Image, error)
 	// ListImages returns the list of containerd.Image filtered by the given conditions.
@@ -64,6 +70,8 @@ type ImageAPIClient interface {
 	PullImage(ctx context.Context, ref string, authConfig *types.AuthConfig, stream *jsonstream.JSONStream) (containerd.Image, error)
 	// RemoveImage removes the image by the given reference.
 	RemoveImage(ctx context.Context, ref string) error
+	// ImportImage creates a set of images by tarstream.
+	ImportImage(ctx context.Context, importer ctrdmetaimages.Importer, reader io.Reader) ([]containerd.Image, error)
 }
 
 // SnapshotAPIClient provides access to containerd snapshot features

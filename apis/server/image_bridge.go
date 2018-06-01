@@ -54,7 +54,7 @@ func (s *Server) pullImage(ctx context.Context, rw http.ResponseWriter, req *htt
 	}
 	// Error information has be sent to client, so no need call resp.Write
 	if err := s.ImageMgr.PullImage(ctx, image, &authConfig, rw); err != nil {
-		logrus.Errorf("failed to pull image %s:%s: %v", image, tag, err)
+		logrus.Errorf("failed to pull image %s: %v", image, err)
 		return nil
 	}
 	return nil
@@ -251,5 +251,37 @@ func (s *Server) removeImage(ctx context.Context, rw http.ResponseWriter, req *h
 	}
 
 	rw.WriteHeader(http.StatusNoContent)
+	return nil
+}
+
+// postImageTag adds tag for the existing image.
+func (s *Server) postImageTag(ctx context.Context, rw http.ResponseWriter, req *http.Request) error {
+	name := mux.Vars(req)["name"]
+
+	targetRef := req.FormValue("repo")
+	if tag := req.FormValue("tag"); tag != "" {
+		targetRef = fmt.Sprintf("%s:%s", targetRef, tag)
+	}
+
+	if err := s.ImageMgr.AddTag(ctx, name, targetRef); err != nil {
+		return err
+	}
+
+	rw.WriteHeader(http.StatusCreated)
+	return nil
+}
+
+// loadImage loads an image by http tar stream.
+func (s *Server) loadImage(ctx context.Context, rw http.ResponseWriter, req *http.Request) error {
+	imageName := req.FormValue("name")
+	if imageName == "" {
+		imageName = "unknown/unknown"
+	}
+
+	if err := s.ImageMgr.LoadImage(ctx, imageName, req.Body); err != nil {
+		return err
+	}
+
+	rw.WriteHeader(http.StatusOK)
 	return nil
 }

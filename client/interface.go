@@ -39,6 +39,7 @@ type ContainerAPIClient interface {
 	ContainerTop(ctx context.Context, name string, arguments []string) (types.ContainerProcessList, error)
 	ContainerLogs(ctx context.Context, name string, options types.ContainerLogsOptions) (io.ReadCloser, error)
 	ContainerResize(ctx context.Context, name, height, width string) error
+	ContainerWait(ctx context.Context, name string) (types.ContainerWaitOKBody, error)
 }
 
 // ImageAPIClient defines methods of Image client.
@@ -47,6 +48,8 @@ type ImageAPIClient interface {
 	ImageInspect(ctx context.Context, name string) (types.ImageInfo, error)
 	ImagePull(ctx context.Context, name, tag, encodedAuth string) (io.ReadCloser, error)
 	ImageRemove(ctx context.Context, name string, force bool) error
+	ImageTag(ctx context.Context, image string, tag string) error
+	ImageLoad(ctx context.Context, name string, r io.Reader) error
 }
 
 // VolumeAPIClient defines methods of Volume client.

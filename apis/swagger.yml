@@ -152,6 +152,32 @@ paths:
           description: "A base64-encoded auth configuration. [See the authentication section for details.](#section/Authentication)"
           type: "string"
 
+  /images/load:
+     post:
+      summary: "Import images"
+      description: |
+        Load a set of images by oci.v1 format tar stream
+      consumes:
+        - application/x-tar
+      responses:
+        200:
+          description: "no error"
+        500:
+          description: "server error"
+          schema:
+            $ref: "#/responses/500ErrorResponse"
+      parameters:
+        - name: "imageTarStream"
+          in: "body"
+          description: "tar stream containing images"
+          schema:
+            type: "string"
+            format: "binary"
+        - name: "name"
+          in: "query"
+          description: "set the image name for the tar stream, default unknown/unknown"
+          type: "string"
+
   /images/{imageid}/json:
     get:
       summary: "Inspect a image"
@@ -262,6 +288,34 @@ paths:
             type: "array"
             items:
               $ref: "#/definitions/SearchResultItem"
+        500:
+          $ref: "#/responses/500ErrorResponse"
+
+  /images/{imageid}/tag:
+    post:
+      summary: "Tag an image"
+      description: "Add tag reference to the existing image"
+      parameters:
+        - $ref: "#/parameters/imageid"
+        - name: "repo"
+          in: "query"
+          description: "The repository to tag in. For example, `someuser/someimage`."
+          type: "string"
+        - name: "tag"
+          in: "query"
+          description: "The name of the new tag."
+          type: "string"
+      responses:
+        201:
+          description: "No error"
+        400:
+          description: "Bad parameter"
+          schema:
+            $ref: "#/definitions/Error"
+        404:
+          description: "no such image"
+          schema:
+            $ref: "#/definitions/Error"
         500:
           $ref: "#/responses/500ErrorResponse"
 
@@ -512,6 +566,32 @@ paths:
           description: "no error"
           schema:
             $ref: "#/definitions/ContainerProcessList"
+        404:
+          $ref: "#/responses/404ErrorResponse"
+        500:
+          $ref: "#/responses/500ErrorResponse"
+      tags: ["Container"]
+
+  /containers/{id}/wait:
+    post:
+      summary: "Block until a container stops, then returns the exit code."
+      operationId: "ContainerWait"
+      parameters:
+        - $ref: "#/parameters/id"
+      responses:
+        200:
+          description: "The container has exited."
+          schema:
+            type: "object"
+            required: [StatusCode]
+            properties:
+              StatusCode:
+                description: "Exit code of the container"
+                type: "integer"
+                x-nullable: false
+              Error:
+                description: "The error message of waiting container"
+                type: "string"
         404:
           $ref: "#/responses/404ErrorResponse"
         500:
@@ -931,7 +1011,7 @@ paths:
                   Scope: "local"
                   Options:
                     device: "tmpfs"
-                    o: "size=100m,uid=1000"
+                    o: "opt.size=100m,uid=1000"
                     type: "tmpfs"
               Warnings: []
         500:
@@ -1759,6 +1839,11 @@ definitions:
         type: "boolean"
         x-nullable: false
         default: true
+      DisableNetworkFiles:
+        description: "Whether to generate the network files(/etc/hostname, /etc/hosts and /etc/resolv.conf) for container."
+        type: "boolean"
+        x-nullable: false
+        default: false
       ExposedPorts:
         description: "An object mapping ports to an empty object in the form:`{<port>/<tcp|udp>: {}}`"
         type: "object"
