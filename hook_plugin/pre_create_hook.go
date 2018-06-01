@@ -147,6 +147,9 @@ func (c ContPlugin) PreCreate(in io.ReadCloser) (io.ReadCloser, error) {
 
 		createConfig.HostConfig.CapAdd = append(createConfig.HostConfig.CapAdd, "SYS_RESOURCE", "SYS_MODULE",
 			"SYS_PTRACE", "SYS_PACCT", "NET_ADMIN", "SYS_ADMIN")
+
+		//don't bind /etc/hosts /etc/hostname /etc/resolv.conf files into container
+		createConfig.DisableNetworkFiles = true
 	}
 
 	// generate quota id as needed
