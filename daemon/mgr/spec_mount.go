@@ -149,5 +149,9 @@ func trySetupNetworkMount(mount *types.MountPoint, c *Container) bool {
 		return true
 	}
 
+	if mount.Destination == "/run" {
+		return true
+	}
+
 	return false
 }
