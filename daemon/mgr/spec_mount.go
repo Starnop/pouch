@@ -148,6 +148,9 @@ func trySetupNetworkMount(mount *types.MountPoint, c *Container) bool {
 		c.ResolvConfPath = mount.Source
 		return true
 	}
+	if mount.Destination == "/run" {
+		return true
+	}
 
 	return false
 }
