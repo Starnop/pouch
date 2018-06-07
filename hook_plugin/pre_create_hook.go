@@ -150,6 +150,12 @@ func (c ContPlugin) PreCreate(in io.ReadCloser) (io.ReadCloser, error) {
 
 		//don't bind /etc/hosts /etc/hostname /etc/resolv.conf files into container
 		createConfig.DisableNetworkFiles = true
+
+		if (createConfig.HostConfig.ShmSize == nil || *createConfig.HostConfig.ShmSize == 0) &&
+			createConfig.HostConfig.Memory > 0 {
+			partOfMemSize := createConfig.HostConfig.Memory / 2
+			createConfig.HostConfig.ShmSize = &partOfMemSize
+		}
 	}
 
 	// generate quota id as needed

@@ -139,18 +139,21 @@ func (s *Server) pullImageStale(ctx context.Context, rw http.ResponseWriter, req
 		dec := json.NewDecoder(pipeR)
 		if _, err := dec.Token(); err != nil {
 			retChan <- fmt.Errorf("failed to read the opening token: %v", err)
+			return
 		}
 		encoder := json.NewEncoder(rw)
 		for dec.More() {
 			var infos []progressInfo
 
 			if err := dec.Decode(&infos); err != nil {
+				dec.Token()
 				retChan <- fmt.Errorf("failed to decode: %v", err)
 				return
 			}
 			if len(infos) > 0 {
 				for _, oneInfo := range infos {
 					if oneInfo.ErrorMessage != "" {
+						dec.Token()
 						retChan <- fmt.Errorf("pull image %s error %s", image, oneInfo.ErrorMessage)
 						return
 					}
@@ -171,11 +174,14 @@ func (s *Server) pullImageStale(ctx context.Context, rw http.ResponseWriter, req
 						},
 					})
 					if err != nil {
+						dec.Token()
 						retChan <- err
+						return
 					}
 				}
 			}
 		}
+		dec.Token()
 		close(retChan)
 	}()
 	///////////end/////////
@@ -183,11 +189,18 @@ func (s *Server) pullImageStale(ctx context.Context, rw http.ResponseWriter, req
 	// Error information has be sent to client, so no need call resp.Write
 	if err := s.ImageMgr.PullImage(ctx, image+":"+tag, &authConfig, pipeW); err != nil {
 		logrus.Errorf("failed to pull image %s:%s: %v", image, tag, err)
-		return nil
+		return changeNotFoundAsSigmaNeed(err)
 	}
 	pipeW.Close()
 
-	return <-retChan
+	return changeNotFoundAsSigmaNeed(<-retChan)
+}
+
+func changeNotFoundAsSigmaNeed(err error) error {
+	if err != nil && strings.HasSuffix(err.Error(), "not found") {
+		return fmt.Errorf(strings.Replace(err.Error(), "not found", "manifest unknown", -1))
+	}
+	return err
 }
 
 func (s *Server) getImage(ctx context.Context, rw http.ResponseWriter, req *http.Request) error {
