@@ -25,6 +25,8 @@ func (s *Server) createVolume(ctx context.Context, rw http.ResponseWriter, req *
 		return httputils.NewHTTPError(err, http.StatusBadRequest)
 	}
 
+	logCreateOptions("volume", config)
+
 	name := config.Name
 	driver := config.Driver
 	options := config.DriverOpts
@@ -38,11 +40,7 @@ func (s *Server) createVolume(ctx context.Context, rw http.ResponseWriter, req *
 		driver = volumetypes.DefaultBackend
 	}
 
-	if err := s.VolumeMgr.Create(ctx, name, driver, options, labels); err != nil {
-		return err
-	}
-
-	volume, err := s.VolumeMgr.Get(ctx, name)
+	volume, err := s.VolumeMgr.Create(ctx, name, driver, options, labels)
 	if err != nil {
 		return err
 	}
