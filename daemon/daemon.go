@@ -10,6 +10,7 @@ import (
 	"github.com/alibaba/pouch/apis/plugins"
 	"github.com/alibaba/pouch/apis/server"
 	criservice "github.com/alibaba/pouch/cri"
+	criconfig "github.com/alibaba/pouch/cri/config"
 	"github.com/alibaba/pouch/ctrd"
 	"github.com/alibaba/pouch/daemon/config"
 	"github.com/alibaba/pouch/daemon/mgr"
@@ -18,6 +19,7 @@ import (
 	"github.com/alibaba/pouch/pkg/meta"
 	"github.com/alibaba/pouch/pkg/system"
 
+	"github.com/containerd/containerd/namespaces"
 	"github.com/gorilla/mux"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -66,12 +68,30 @@ func NewDaemon(cfg *config.Config) *Daemon {
 	if cfg.ContainerdPath != "" {
 		containerdBinaryFile = cfg.ContainerdPath
 	}
+
+	rpcAddr := cfg.ContainerdAddr
+	defaultns := namespaces.Default
+	// the default unix socket path to the containerd socket
+	if cfg.IsCriEnabled {
+		switch cfg.CriConfig.CriVersion {
+		case "v1alpha1":
+			rpcAddr = "/var/run/containerd/containerd.sock"
+		case "v1alpha2":
+			rpcAddr = "/run/containerd/containerd.sock"
+		default:
+			logrus.Errorf("invalid CRI version,failed to start CRI service")
+			return nil
+		}
+		defaultns = criconfig.K8sNamespace
+	}
+
 	containerd, err := ctrd.NewClient(cfg.HomeDir,
 		ctrd.WithDebugLog(cfg.Debug),
 		ctrd.WithStartDaemon(true),
 		ctrd.WithContainerdBinary(containerdBinaryFile),
-		ctrd.WithRPCAddr(cfg.ContainerdAddr),
+		ctrd.WithRPCAddr(rpcAddr),
 		ctrd.WithOOMScoreAdjust(cfg.OOMScoreAdjust),
+		ctrd.WithDefaultNamespace(defaultns),
 	)
 	if err != nil {
 		logrus.Errorf("failed to new containerd's client: %v", err)
@@ -214,7 +234,7 @@ func (d *Daemon) Run() error {
 	}()
 
 	criStopCh := make(chan error)
-	go criservice.RunCriService(d.config, d.containerMgr, d.imageMgr, criStopCh)
+	go criservice.RunCriService(d.config, d.Containerd(), d.containerMgr, d.imageMgr, criStopCh)
 
 	err = <-criStopCh
 	if err != nil {
@@ -285,7 +305,7 @@ func (d *Daemon) MetaStore() *meta.Store {
 }
 
 func (d *Daemon) networkInit(ctx context.Context) error {
-	return mode.NetworkModeInit(ctx, d.config.NetworkConfg, d.networkMgr)
+	return mode.NetworkModeInit(ctx, d.config.NetworkConfig, d.networkMgr)
 }
 
 // ContainerPlugin returns the container plugin fetched from shared file

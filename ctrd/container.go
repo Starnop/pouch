@@ -13,6 +13,7 @@ import (
 	"github.com/alibaba/pouch/pkg/errtypes"
 
 	"github.com/containerd/containerd"
+	containerdtypes "github.com/containerd/containerd/api/types"
 	"github.com/containerd/containerd/errdefs"
 	"github.com/containerd/containerd/leases"
 	"github.com/containerd/containerd/linux/runctypes"
@@ -36,6 +37,21 @@ type containerPack struct {
 	// client is to record which stream client the container connect with
 	client        *WrapperClient
 	skipStopHooks bool
+}
+
+// ContainerStats returns stats of the container.
+func (c *Client) ContainerStats(ctx context.Context, id string) (*containerdtypes.Metric, error) {
+	if !c.lock.Trylock(id) {
+		return nil, errtypes.ErrLockfailed
+	}
+	defer c.lock.Unlock(id)
+
+	pack, err := c.watch.get(id)
+	if err != nil {
+		return nil, err
+	}
+
+	return pack.task.Metrics(ctx)
 }
 
 // ExecContainer executes a process in container.
@@ -363,6 +379,7 @@ func (c *Client) createContainer(ctx context.Context, ref, id string, container 
 
 	options := []containerd.NewContainerOpts{
 		containerd.WithSpec(container.Spec, specOptions...),
+		containerd.WithContainerLabels(container.Labels),
 		containerd.WithRuntime(fmt.Sprintf("io.containerd.runtime.v1.%s", runtime.GOOS), &runctypes.RuncOptions{
 			Runtime:     container.Runtime,
 			RuntimeRoot: runtimeRoot,
@@ -411,7 +428,7 @@ func (c *Client) createTask(ctx context.Context, id string, container containerd
 	// create task
 	task, err := container.NewTask(ctx, io)
 	if err != nil {
-		return pack, errors.Wrapf(err, "failed to create task, container id: %s", id)
+		return pack, errors.Wrapf(err, "failed to create task for container(%s)", id)
 	}
 
 	defer func() {
@@ -422,17 +439,17 @@ func (c *Client) createTask(ctx context.Context, id string, container containerd
 
 	statusCh, err := task.Wait(context.TODO())
 	if err != nil {
-		return pack, errors.Wrap(err, "failed to wait task")
+		return pack, errors.Wrapf(err, "failed to wait task in container", id)
 	}
 
-	logrus.Infof("success to new task, container id: %s, pid: %d", id, task.Pid())
+	logrus.Infof("success to create task(pid=%d) in container(%s)", task.Pid(), id)
 
 	// start task
 	if err := task.Start(ctx); err != nil {
-		return pack, errors.Wrapf(err, "failed to start task: %d, container id: %s", task.Pid(), id)
+		return pack, errors.Wrapf(err, "failed to start task(%d) in container(%s)", task.Pid(), id)
 	}
 
-	logrus.Infof("success to start task, container id: %s", id)
+	logrus.Infof("success to start task in container(%s)", id)
 
 	pack = &containerPack{
 		id:        id,
