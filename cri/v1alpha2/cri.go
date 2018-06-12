@@ -12,6 +12,7 @@ import (
 	"time"
 
 	apitypes "github.com/alibaba/pouch/apis/types"
+	criconfig "github.com/alibaba/pouch/cri/config"
 	"github.com/alibaba/pouch/daemon/config"
 	"github.com/alibaba/pouch/daemon/mgr"
 	"github.com/alibaba/pouch/pkg/errtypes"
@@ -22,8 +23,10 @@ import (
 
 	// NOTE: "golang.org/x/net/context" is compatible with standard "context" in golang1.7+.
 	"github.com/cri-o/ocicni/pkg/ocicni"
+	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	runtime "k8s.io/kubernetes/pkg/kubelet/apis/cri/runtime/v1alpha2"
+	"text/template"
 )
 
 const (
@@ -95,6 +98,9 @@ type CriManager struct {
 	SandboxImage string
 	// SandboxStore stores the configuration of sandboxes.
 	SandboxStore *meta.Store
+
+	// CriConfig
+	CriConfig criconfig.Config
 }
 
 // NewCriManager creates a brand new cri manager.
@@ -108,6 +114,7 @@ func NewCriManager(config *config.Config, ctrMgr mgr.ContainerMgr, imgMgr mgr.Im
 		ContainerMgr:   ctrMgr,
 		ImageMgr:       imgMgr,
 		CniMgr:         NewCniManager(&config.CriConfig),
+		CriConfig:      config.CriConfig,
 		StreamServer:   streamServer,
 		SandboxBaseDir: path.Join(config.HomeDir, "sandboxes"),
 		SandboxImage:   config.CriConfig.SandboxImage,
@@ -800,7 +807,40 @@ func (c *CriManager) PortForward(ctx context.Context, r *runtime.PortForwardRequ
 
 // UpdateRuntimeConfig updates the runtime config. Currently only handles podCIDR updates.
 func (c *CriManager) UpdateRuntimeConfig(ctx context.Context, r *runtime.UpdateRuntimeConfigRequest) (*runtime.UpdateRuntimeConfigResponse, error) {
-	return nil, fmt.Errorf("UpdateRuntimeConfig Not Implemented Yet")
+	podCIDR := r.GetRuntimeConfig().GetNetworkConfig().GetPodCidr()
+	if podCIDR == "" {
+		return &runtime.UpdateRuntimeConfigResponse{}, nil
+	}
+	confTemplate := c.CriConfig.NetworkPluginConfTemplate
+	if confTemplate == "" {
+		logrus.Info("No cni config template is specified, wait for other system components to drop the config.")
+		return &runtime.UpdateRuntimeConfigResponse{}, nil
+	}
+
+	if err := c.CniMgr.Status(); err == nil {
+		logrus.Infof("Network plugin is ready, skip generating cni config from template %q", confTemplate)
+		return &runtime.UpdateRuntimeConfigResponse{}, nil
+	}
+	logrus.Infof("Generating cni config from template %q", confTemplate)
+
+	// generate cni config file from the template with updated pod cidr.
+	t, err := template.ParseFiles(confTemplate)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to parse cni config template %q", confTemplate)
+	}
+	if err := os.MkdirAll(c.CriConfig.NetworkPluginConfDir, 0755); err != nil {
+		return nil, errors.Wrapf(err, "failed to create cni config directory: %q", c.CriConfig.NetworkPluginConfDir)
+	}
+	confFile := filepath.Join(c.CriConfig.NetworkPluginConfDir, cniConfigFileName)
+	f, err := os.OpenFile(confFile, os.O_WRONLY|os.O_CREATE, 0644)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to open cni config file %q", confFile)
+	}
+	defer f.Close()
+	if err := t.Execute(f, cniConfigTemplate{PodCIDR: podCIDR}); err != nil {
+		return nil, errors.Wrapf(err, "failed to generate cni config file %q", confFile)
+	}
+	return &runtime.UpdateRuntimeConfigResponse{}, nil
 }
 
 // Status returns the status of the runtime.
