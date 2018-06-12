@@ -770,3 +770,27 @@ func parseUserFromImageUser(id string) string {
 	// no group, just return the id
 	return id
 }
+
+// resourceToCriResource converts OCILinuxResource to apitypes.Resources Object.
+func resourceToCriResource(newresource *runtime.LinuxContainerResources) apitypes.Resources {
+	var resources apitypes.Resources
+	if newresource.GetCpuPeriod() != 0 {
+		resources.CPUPeriod = newresource.GetCpuPeriod()
+	}
+	if newresource.GetCpuQuota() != 0 {
+		resources.CPUQuota = newresource.GetCpuQuota()
+	}
+	if newresource.GetCpuShares() != 0 {
+		resources.CPUShares = newresource.GetCpuShares()
+	}
+	if newresource.GetMemoryLimitInBytes() != 0 {
+		resources.MemoryReservation = newresource.GetMemoryLimitInBytes()
+	}
+	if newresource.GetCpusetCpus() != "" {
+		resources.CpusetCpus = newresource.GetCpusetCpus()
+	}
+	if newresource.GetCpusetMems() != "" {
+		resources.CpusetMems = newresource.GetCpusetMems()
+	}
+	return resources
+}
