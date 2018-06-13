@@ -32,7 +32,7 @@ func activePlugins() {
 }
 
 func cleanVmcommonDir() {
-	for range time.NewTicker(time.Minute * 5).C {
+	for range time.NewTicker(time.Hour * 23).C {
 		files, err := ioutil.ReadDir(homeDir)
 		if err != nil {
 			logrus.Errorf("read graph dir error. %s %v", homeDir, err)
@@ -54,7 +54,7 @@ func cleanVmcommonDir() {
 	checkIfExist:
 		if len(existDir) > 0 {
 			if afterWait {
-				time.Sleep(time.Minute * 5)
+				time.Sleep(time.Hour * 23)
 			}
 			ca, err = getAllContainers()
 			if err != nil {
