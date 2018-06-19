@@ -65,7 +65,7 @@ func (c ContPlugin) PreCreate(in io.ReadCloser) (io.ReadCloser, error) {
 			createConfig.NetworkingConfig.EndpointsConfig = make(map[string]*EndpointSettings)
 		}
 
-		if nwName, e := prepare_network(requestedIP, defaultRoute, mask, nic, networkMode,
+		if nwName, e := prepareNetwork(requestedIP, defaultRoute, mask, nic, networkMode,
 			createConfig.NetworkingConfig.EndpointsConfig, env); e != nil {
 			return nil, e
 		} else if nwName != networkMode {

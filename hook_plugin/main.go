@@ -1,15 +1,8 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
-	"net"
-	"os"
-	"os/exec"
-	"strings"
 	"time"
-
-	"github.com/sirupsen/logrus"
 )
 
 type ContPlugin int

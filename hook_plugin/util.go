@@ -29,40 +29,6 @@ var (
 	}
 )
 
-func getNetworkMode(m map[string]interface{}) (nm string, err error) {
-	hostConfig := m["HostConfig"]
-	switch r := hostConfig.(type) {
-	case map[string]interface{}:
-		networkMode := r["NetworkMode"]
-		ok := false
-		if nm, ok = networkMode.(string); ok {
-			return
-		}
-		return "", fmt.Errorf("%v of networkMode is not a string", networkMode)
-	default:
-		return "", fmt.Errorf("HostConfig format error in body. %q", hostConfig)
-	}
-}
-
-func getAllEnv(m map[string]interface{}) (arr []string, err error) {
-	env := m["Env"]
-	switch r := env.(type) {
-	case []interface{}:
-		ok := false
-		ret := make([]string, len(r))
-		for i, line := range r {
-			if ret[i], ok = line.(string); !ok {
-				return arr, fmt.Errorf("%v in env is not a string", line)
-			}
-		}
-		return ret, nil
-	case []string:
-		return r, nil
-	default:
-		return arr, fmt.Errorf("env format error in body. %q", env)
-	}
-}
-
 func getEnv(env []string, key string) string {
 	for _, pair := range env {
 		parts := strings.SplitN(pair, "=", 2)
@@ -93,7 +59,7 @@ func addParamsForOverlay(m map[string]string, env []string) {
 	}
 }
 
-func prepare_network(requestedIP, defaultRoute, mask, nic string, networkMode string, EndpointsConfig map[string]*EndpointSettings, rawEnv []string) (nwName string, err error) {
+func prepareNetwork(requestedIP, defaultRoute, mask, nic string, networkMode string, EndpointsConfig map[string]*EndpointSettings, rawEnv []string) (nwName string, err error) {
 	nwName = networkMode
 	nwIf := nic
 
