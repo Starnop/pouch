@@ -180,6 +180,9 @@ type Container struct {
 
 	// Escape keys for detach
 	DetachKeys string
+
+	// RootFSProvided is a flag to point the container is created by specify rootfs
+	RootFSProvided bool
 }
 
 // Key returns container's id.
@@ -281,6 +284,17 @@ func (c *Container) FormatStatus() (string, error) {
 	}
 
 	return status, nil
+}
+
+// UnsetMergedDir unsets Snapshot MergedDir. Stop a container will
+// delete the containerd container, the merged dir
+// will also be deleted, so we should unset the
+// container's MergedDir.
+func (c *Container) UnsetMergedDir() {
+	if c.Snapshotter == nil || c.Snapshotter.Data == nil {
+		return
+	}
+	c.Snapshotter.Data["MergedDir"] = ""
 }
 
 // ContainerRestartPolicy represents the policy is used to manage container.
