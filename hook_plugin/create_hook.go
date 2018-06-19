@@ -15,6 +15,17 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// PreCreate transfer parameters from labels and environments to Config ans HostConfig
+// 1. change NetworkMode to bridge if not set
+// 2. create network if network doesn't exist
+// 3. generate admin uid if env ali_admin_uid=0 exist
+// 4. set user to root if running in rich container mode
+// 5. convert label DiskQuota to DiskQuota in ContainerConfig parameter
+// 6. in rich container mode, add some capabilities by default
+// 7. in rich container mode, don't bind /etc/hosts /etc/hostname /etc/resolv.conf files into container
+// 8. in rich container mode, set ShmSize to half of the limit of memory
+// 9. set HOSTNAME env if HostName specified
+// 10. if VolumesFrom specifed and the container name has a prefix of slash, trim it
 func (c ContPlugin) PreCreate(in io.ReadCloser) (io.ReadCloser, error) {
 	logrus.Infof("pre create method called")
 	inputBuffer, err := ioutil.ReadAll(in)
@@ -23,7 +34,6 @@ func (c ContPlugin) PreCreate(in io.ReadCloser) (io.ReadCloser, error) {
 	}
 	logrus.Infof("create container with body %s", string(inputBuffer))
 
-	//create network if exist
 	var createConfig ContainerCreateConfig
 	err = json.NewDecoder(bytes.NewReader(inputBuffer)).Decode(&createConfig)
 	if err != nil {
@@ -74,6 +84,7 @@ func (c ContPlugin) PreCreate(in io.ReadCloser) (io.ReadCloser, error) {
 		}
 	}
 
+	// generate admin uid
 	if getEnv(createConfig.Env, "ali_admin_uid") == "0" && requestedIP != "" {
 		if b, ex := exec.Command("/opt/ali-iaas/pouch/bin/get_admin_uid.sh",
 			requestedIP).CombinedOutput(); ex != nil {
