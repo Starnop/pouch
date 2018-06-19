@@ -270,6 +270,14 @@ func getUnknownFlags(flagSet *pflag.FlagSet, fileFlags map[string]interface{}) e
 		}
 	}
 
+	afterDelete := make([]string, 0, len(unknownFlags))
+	for _, one := range unknownFlags {
+		if one == "TLS" || one == "volume-config" {
+			afterDelete = append(afterDelete, one)
+		}
+	}
+	unknownFlags = afterDelete
+
 	if len(unknownFlags) > 0 {
 		return fmt.Errorf("unknown flags: %s", strings.Join(unknownFlags, ", "))
 	}
