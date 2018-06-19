@@ -446,6 +446,18 @@ func (mgr *ContainerManager) Start(ctx context.Context, id, detachKeys string) (
 		return err
 	}
 
+	if ! c.Config.DisableNetworkFiles {
+		for _, one := range c.Config.Env {
+			arr := strings.SplitN(one, "=", 2)
+			if len(arr) != 2 {
+				continue
+			}
+			if arr[0] == "ali_run_mode" && arr[1] == "vm" {
+				c.Config.DisableNetworkFiles = true
+			}
+		}
+	}
+
 	return mgr.start(ctx, c, detachKeys)
 }
 
