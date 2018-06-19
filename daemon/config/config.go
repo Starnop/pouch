@@ -238,7 +238,7 @@ func transferTLSConfig(config map[string]interface{}) {
 		return
 	}
 
-	var tlscofig map[string]interface{}
+	tlscofig := make(map[string]interface{}, 3)
 	iterateConfig(map[string]interface{}{
 		"TLS": v,
 	}, tlscofig)
