@@ -149,7 +149,7 @@ func (c *CriManager) Version(ctx context.Context, r *runtime.VersionRequest) (*r
 
 // RunPodSandbox creates and starts a pod-level sandbox. Runtimes should ensure
 // the sandbox is in ready state.
-func (c *CriManager) RunPodSandbox(ctx context.Context, r *runtime.RunPodSandboxRequest) (*runtime.RunPodSandboxResponse, error) {
+func (c *CriManager) RunPodSandbox(ctx context.Context, r *runtime.RunPodSandboxRequest) (_ *runtime.RunPodSandboxResponse, retErr error) {
 	config := r.GetConfig()
 
 	// Step 1: Prepare image for the sandbox.
@@ -174,6 +174,12 @@ func (c *CriManager) RunPodSandbox(ctx context.Context, r *runtime.RunPodSandbox
 		return nil, fmt.Errorf("failed to create a sandbox for pod %q: %v", config.Metadata.Name, err)
 	}
 	id := createResp.ID
+	defer func() {
+		// If running sandbox failed, clean up the container.
+		if retErr != nil {
+			c.ContainerMgr.Remove(ctx, id, &apitypes.ContainerRemoveOptions{Volumes: true, Force: true})
+		}
+	}()
 
 	// Step 3: Start the sandbox container.
 	err = c.ContainerMgr.Start(ctx, id, "")
@@ -186,6 +192,12 @@ func (c *CriManager) RunPodSandbox(ctx context.Context, r *runtime.RunPodSandbox
 	if err != nil {
 		return nil, fmt.Errorf("failed to create sandbox root directory: %v", err)
 	}
+	defer func() {
+		// If running sandbox failed, clean up the sandbox directory.
+		if retErr != nil {
+			os.RemoveAll(sandboxRootDir)
+		}
+	}()
 
 	// Setup sandbox file /etc/resolv.conf.
 	err = setupSandboxFiles(sandboxRootDir, config)
@@ -686,7 +698,34 @@ func (c *CriManager) ListContainerStats(ctx context.Context, r *runtime.ListCont
 
 // UpdateContainerResources updates ContainerConfig of the container.
 func (c *CriManager) UpdateContainerResources(ctx context.Context, r *runtime.UpdateContainerResourcesRequest) (*runtime.UpdateContainerResourcesResponse, error) {
-	return nil, fmt.Errorf("UpdateContainerResources Not Implemented Yet")
+	containerID := r.GetContainerId()
+	container, err := c.ContainerMgr.Get(ctx, containerID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get container %q: %v", containerID, err)
+	}
+
+	// cannot update container resource when it is in removing state
+	if container.IsRemoving() {
+		return nil, fmt.Errorf("cannot to update resource for container %q when it is in removing state", containerID)
+	}
+
+	resources := r.GetLinux()
+	updateConfig := &apitypes.UpdateConfig{
+		Resources: apitypes.Resources{
+			CPUPeriod:  resources.GetCpuPeriod(),
+			CPUQuota:   resources.GetCpuQuota(),
+			CPUShares:  resources.GetCpuShares(),
+			Memory:     resources.GetMemoryLimitInBytes(),
+			CpusetCpus: resources.GetCpusetCpus(),
+			CpusetMems: resources.GetCpusetMems(),
+		},
+	}
+	err = c.ContainerMgr.Update(ctx, containerID, updateConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to update resource for container %q: %v", containerID, err)
+	}
+
+	return &runtime.UpdateContainerResourcesResponse{}, nil
 }
 
 // ReopenContainerLog asks runtime to reopen the stdout/stderr log file

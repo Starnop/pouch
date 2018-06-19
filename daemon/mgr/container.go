@@ -267,6 +267,10 @@ func (mgr *ContainerManager) Create(ctx context.Context, name string, config *ty
 		config.HostConfig.Runtime = mgr.Config.DefaultRuntime
 	}
 
+	if _, exist := mgr.Config.Runtimes[config.HostConfig.Runtime]; !exist {
+		return nil, fmt.Errorf("unknown runtime %s", config.HostConfig.Runtime)
+	}
+
 	config.Image = primaryRef.String()
 	// create a snapshot with image.
 	if err := mgr.Client.CreateSnapshot(ctx, id, config.Image); err != nil {
@@ -748,6 +752,18 @@ func (mgr *ContainerManager) Update(ctx context.Context, name string, config *ty
 		return err
 	}
 
+	restore := false
+	configBack := *c.Config
+	hostconfigBack := *c.HostConfig
+	defer func() {
+		if restore {
+			c.Lock()
+			c.Config = &configBack
+			c.HostConfig = &hostconfigBack
+			c.Unlock()
+		}
+	}()
+
 	if c.IsRunning() && config.Resources.KernelMemory != 0 {
 		return fmt.Errorf("failed to update container %s: can not update kernel memory to a running container, please stop it first", c.ID)
 	}
@@ -795,12 +811,13 @@ func (mgr *ContainerManager) Update(ctx context.Context, name string, config *ty
 
 	// update Resources of a container.
 	if err := mgr.updateContainerResources(c, config.Resources); err != nil {
+		restore = true
 		return errors.Wrapf(err, "failed to update resource of container %s", c.ID)
 	}
 
 	c.Lock()
 	// TODO update restartpolicy when container is running.
-	if config.RestartPolicy.Name != "" {
+	if config.RestartPolicy != nil && config.RestartPolicy.Name != "" {
 		c.HostConfig.RestartPolicy = config.RestartPolicy
 	}
 	c.Unlock()
@@ -856,17 +873,20 @@ func (mgr *ContainerManager) Update(ctx context.Context, name string, config *ty
 	// If container is not running, update container metadata struct is enough,
 	// resources will be updated when the container is started again,
 	// If container is running, we need to update configs to the real world.
-	var updateErr error
 	if c.IsRunning() {
-		updateErr = mgr.Client.UpdateResources(ctx, c.ID, c.HostConfig.Resources)
+		if err := mgr.Client.UpdateResources(ctx, c.ID, c.HostConfig.Resources); err != nil {
+			restore = true
+			return fmt.Errorf("failed to update resource: %s", err)
+		}
 	}
 
 	// store disk.
-	if updateErr == nil {
-		updateErr = c.Write(mgr.Store)
+	err = c.Write(mgr.Store)
+	if err != nil {
+		restore = true
 	}
 
-	return updateErr
+	return err
 }
 
 // Remove removes a container, it may be running or stopped and so on.
@@ -990,7 +1010,7 @@ func (mgr *ContainerManager) updateContainerResources(c *Container, resources ty
 	if resources.CPUPeriod != 0 {
 		cResources.CPUPeriod = resources.CPUPeriod
 	}
-	if resources.CPUQuota != 0 {
+	if resources.CPUQuota > -1 {
 		cResources.CPUQuota = resources.CPUQuota
 	}
 	if resources.CPUShares != 0 {
@@ -1010,10 +1030,6 @@ func (mgr *ContainerManager) updateContainerResources(c *Container, resources ty
 		}
 		cResources.Memory = resources.Memory
 	}
-	if resources.MemorySwap != 0 {
-		cResources.MemorySwap = resources.MemorySwap
-	}
-
 	if resources.MemorySwap != 0 {
 		cResources.MemorySwap = resources.MemorySwap
 	}
