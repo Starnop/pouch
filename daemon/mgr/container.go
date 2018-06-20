@@ -448,7 +448,7 @@ func (mgr *ContainerManager) Start(ctx context.Context, id, detachKeys string) (
 		return err
 	}
 
-	if ! c.Config.DisableNetworkFiles {
+	if !c.Config.DisableNetworkFiles {
 		for _, one := range c.Config.Env {
 			arr := strings.SplitN(one, "=", 2)
 			if len(arr) != 2 {
@@ -971,6 +971,12 @@ func (mgr *ContainerManager) Update(ctx context.Context, name string, config *ty
 		}
 
 		c.Config.Env = newEnvSlice
+
+		if mgr.containerPlugin != nil {
+			if err = mgr.containerPlugin.PostUpdate(c.BaseFS, c.Config.Env); err != nil {
+				return err
+			}
+		}
 	}
 
 	// If container is not running, update container metadata struct is enough,

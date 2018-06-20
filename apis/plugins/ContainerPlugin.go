@@ -12,8 +12,12 @@ type ContainerPlugin interface {
 	// used to sort the pre start array that pass to runc, network plugin hook always has priority value 0.
 	PreStart(interface{}) ([]int, [][]string, error)
 
-	//NetworkGenericParams accepts the container id and env of this container and returns the priority of this endpoint
+	// NetworkGenericParams accepts the container id and env of this container and returns the priority of this endpoint
 	// and if this endpoint should enable resolver and a map which will be used as generic params to create endpoints of
 	// this container
 	PreCreateEndpoint(string, []string) (priority int, disableResolver bool, genericParam map[string]interface{})
+
+	// PostUpdate updates env /etc/profile.d/dockerenv.sh and /etc/instanceInfo,
+	// called after update method successful
+	PostUpdate(string, []string) error
 }
