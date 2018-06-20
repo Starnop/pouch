@@ -207,17 +207,17 @@ func (c *Converter) fetchBlob(ctx context.Context, desc ocispec.Descriptor) erro
 	log.G(ctx).Debug("fetch blob")
 
 	var (
-		ref   = remotes.MakeRefKey(ctx, desc)
-		calc  = newBlobStateCalculator()
-		retry = 16
-		size  = desc.Size
+		ref            = remotes.MakeRefKey(ctx, desc)
+		calc           = newBlobStateCalculator()
+		retry          = 16
+		size           = desc.Size
+		compressMethod = compression.Gzip
 	)
 
 	// size may be unknown, set to zero for content ingest
 	if size == -1 {
 		size = 0
 	}
-	wrappedGzipReader := false
 
 tryit:
 	cw, err := c.contentStore.Writer(ctx, ref, size, desc.Digest)
@@ -250,7 +250,7 @@ tryit:
 			return err
 		}
 
-		wrappedGzipReader = compression.WrappedGzipReader(r)
+		compressMethod = r.GetCompression()
 		_, err = io.Copy(calc, r)
 		r.Close()
 		if err != nil {
@@ -275,7 +275,7 @@ tryit:
 				return err
 			}
 
-			wrappedGzipReader = compression.WrappedGzipReader(r)
+			compressMethod = r.GetCompression()
 			_, err = io.Copy(calc, r)
 			r.Close()
 			pr.CloseWithError(err)
@@ -302,7 +302,7 @@ tryit:
 		desc.Size = info.Size
 	}
 
-	if !wrappedGzipReader {
+	if compressMethod == compression.Uncompressed {
 		log.G(ctx).Debugf("change media type of layer %s from gzip to tar", desc.Digest)
 		desc.MediaType = images.MediaTypeDockerSchema2Layer
 	}
