@@ -13,6 +13,7 @@ import (
 	"github.com/opencontainers/image-spec/identity"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
+	"github.com/containerd/containerd/snapshots"
 )
 
 // Image describes an image used by containers
@@ -98,6 +99,10 @@ func (i *image) Unpack(ctx context.Context, snapshotterName string) error {
 		return err
 	}
 
+	opts := []snapshots.Opt{
+		snapshots.WithLabels(map[string]string{"type":"image"}),
+	}
+
 	var (
 		sn = i.client.SnapshotService(snapshotterName)
 		a  = i.client.DiffService()
@@ -107,7 +112,7 @@ func (i *image) Unpack(ctx context.Context, snapshotterName string) error {
 		unpacked bool
 	)
 	for _, layer := range layers {
-		unpacked, err = rootfs.ApplyLayer(ctx, layer, chain, sn, a)
+		unpacked, err = rootfs.ApplyLayer(ctx, layer, chain, sn, a, opts...)
 		if err != nil {
 			return err
 		}
