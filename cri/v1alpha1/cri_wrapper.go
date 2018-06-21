@@ -1,9 +1,10 @@
 package v1alpha1
 
 import (
+	"github.com/alibaba/pouch/cri/apis/cri/v1alpha1/runtime"
+
 	"github.com/sirupsen/logrus"
 	"golang.org/x/net/context"
-	"k8s.io/kubernetes/pkg/kubelet/apis/cri/v1alpha1/runtime"
 )
 
 // CriWrapper wraps CriManager and logs each operation for debugging convenice.

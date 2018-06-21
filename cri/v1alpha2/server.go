@@ -7,6 +7,7 @@ import (
 	"path"
 	"time"
 
+	runtimeapi "github.com/alibaba/pouch/cri/apis/cri/runtime/v1alpha2"
 	"github.com/alibaba/pouch/cri/stream"
 	"github.com/alibaba/pouch/cri/stream/constant"
 	"github.com/alibaba/pouch/cri/stream/portforward"
@@ -15,7 +16,6 @@ import (
 	"github.com/gorilla/mux"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
-	runtimeapi "k8s.io/kubernetes/pkg/kubelet/apis/cri/runtime/v1alpha2"
 )
 
 // Keep these constants consistent with the peers in official package:
