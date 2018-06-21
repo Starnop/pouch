@@ -7,11 +7,11 @@ import (
 	"testing"
 
 	apitypes "github.com/alibaba/pouch/apis/types"
+	runtime "github.com/alibaba/pouch/cri/apis/cri/runtime/v1alpha2"
 	"github.com/alibaba/pouch/daemon/mgr"
 
 	"github.com/stretchr/testify/assert"
 	"golang.org/x/net/context"
-	runtime "k8s.io/kubernetes/pkg/kubelet/apis/cri/runtime/v1alpha2"
 )
 
 func Test_parseUint32(t *testing.T) {

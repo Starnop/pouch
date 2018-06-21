@@ -12,6 +12,7 @@ import (
 	"time"
 
 	apitypes "github.com/alibaba/pouch/apis/types"
+	runtime "github.com/alibaba/pouch/cri/apis/cri/runtime/v1alpha2"
 	"github.com/alibaba/pouch/daemon/config"
 	"github.com/alibaba/pouch/daemon/mgr"
 	"github.com/alibaba/pouch/pkg/errtypes"
@@ -23,7 +24,6 @@ import (
 	// NOTE: "golang.org/x/net/context" is compatible with standard "context" in golang1.7+.
 	"github.com/cri-o/ocicni/pkg/ocicni"
 	"github.com/sirupsen/logrus"
-	runtime "k8s.io/kubernetes/pkg/kubelet/apis/cri/runtime/v1alpha2"
 )
 
 const (
@@ -482,6 +482,7 @@ func (c *CriManager) CreateContainer(ctx context.Context, r *runtime.CreateConta
 			OpenStdin: config.Stdin,
 			StdinOnce: config.StdinOnce,
 			Tty:       config.Tty,
+			DiskQuota: config.GetLinux().GetResources().GetDiskQuota(),
 		},
 		HostConfig: &apitypes.HostConfig{
 			Binds: generateMountBindings(config.GetMounts()),
@@ -674,6 +675,7 @@ func (c *CriManager) ContainerStatus(ctx context.Context, r *runtime.ContainerSt
 		imageRef = imageInfo.RepoDigests[0]
 	}
 
+	resources := container.HostConfig.Resources
 	status := &runtime.ContainerStatus{
 		Id:          container.ID,
 		Metadata:    metadata,
@@ -690,6 +692,27 @@ func (c *CriManager) ContainerStatus(ctx context.Context, r *runtime.ContainerSt
 		Labels:      labels,
 		Annotations: annotations,
 		LogPath:     container.LogPath,
+		Volumes:     parseVolumesFromPouch(container.Config.Volumes),
+		Resources: &runtime.LinuxContainerResources{
+			CpuPeriod:             resources.CPUPeriod,
+			CpuQuota:              resources.CPUQuota,
+			CpuShares:             resources.CPUShares,
+			MemoryLimitInBytes:    resources.Memory,
+			CpusetCpus:            resources.CpusetCpus,
+			CpusetMems:            resources.CpusetMems,
+			BlkioWeight:           uint32(resources.BlkioWeight),
+			BlkioWeightDevice:     parseWeightDeviceFromPouch(resources.BlkioWeightDevice),
+			BlkioDeviceReadBps:    parseThrottleDeviceFromPouch(resources.BlkioDeviceReadBps),
+			BlkioDeviceWriteBps:   parseThrottleDeviceFromPouch(resources.BlkioDeviceWriteBps),
+			BlkioDeviceRead_IOps:  parseThrottleDeviceFromPouch(resources.BlkioDeviceReadIOps),
+			BlkioDeviceWrite_IOps: parseThrottleDeviceFromPouch(resources.BlkioDeviceWriteIOps),
+			KernelMemory:          resources.KernelMemory,
+			MemoryReservation:     resources.MemoryReservation,
+			MemorySwappiness: &runtime.Int64Value{
+				Value: *resources.MemorySwappiness,
+			},
+			Ulimits: parseUlimitFromPouch(resources.Ulimits),
+		},
 	}
 
 	return &runtime.ContainerStatusResponse{Status: status}, nil
@@ -722,13 +745,24 @@ func (c *CriManager) UpdateContainerResources(ctx context.Context, r *runtime.Up
 	resources := r.GetLinux()
 	updateConfig := &apitypes.UpdateConfig{
 		Resources: apitypes.Resources{
-			CPUPeriod:  resources.GetCpuPeriod(),
-			CPUQuota:   resources.GetCpuQuota(),
-			CPUShares:  resources.GetCpuShares(),
-			Memory:     resources.GetMemoryLimitInBytes(),
-			CpusetCpus: resources.GetCpusetCpus(),
-			CpusetMems: resources.GetCpusetMems(),
+			CPUPeriod:            resources.GetCpuPeriod(),
+			CPUQuota:             resources.GetCpuQuota(),
+			CPUShares:            resources.GetCpuShares(),
+			Memory:               resources.GetMemoryLimitInBytes(),
+			CpusetCpus:           resources.GetCpusetCpus(),
+			CpusetMems:           resources.GetCpusetMems(),
+			BlkioWeight:          uint16(resources.GetBlkioWeight()),
+			BlkioWeightDevice:    parseWeightDeviceFromAPI(resources.GetBlkioWeightDevice()),
+			BlkioDeviceReadBps:   parseThrottleDeviceFromAPI(resources.GetBlkioDeviceReadBps()),
+			BlkioDeviceWriteBps:  parseThrottleDeviceFromAPI(resources.GetBlkioDeviceWriteBps()),
+			BlkioDeviceReadIOps:  parseThrottleDeviceFromAPI(resources.GetBlkioDeviceRead_IOps()),
+			BlkioDeviceWriteIOps: parseThrottleDeviceFromAPI(resources.GetBlkioDeviceWrite_IOps()),
+			KernelMemory:         resources.GetKernelMemory(),
+			MemoryReservation:    resources.GetMemoryReservation(),
+			MemorySwappiness:     &resources.GetMemorySwappiness().Value,
+			Ulimits:              parseUlimitFromAPI(resources.GetUlimits()),
 		},
+		//DiskQuota:resources.GetDiskQuota()
 	}
 	err = c.ContainerMgr.Update(ctx, containerID, updateConfig)
 	if err != nil {

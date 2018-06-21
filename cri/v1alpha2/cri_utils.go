@@ -12,12 +12,12 @@ import (
 	"time"
 
 	apitypes "github.com/alibaba/pouch/apis/types"
+	runtime "github.com/alibaba/pouch/cri/apis/cri/runtime/v1alpha2"
 	"github.com/alibaba/pouch/daemon/mgr"
 	"github.com/alibaba/pouch/pkg/utils"
 
 	"github.com/go-openapi/strfmt"
 	"golang.org/x/net/context"
-	runtime "k8s.io/kubernetes/pkg/kubelet/apis/cri/runtime/v1alpha2"
 )
 
 func parseUint32(s string) (uint32, error) {
@@ -724,6 +724,7 @@ func imageToCriImage(image *apitypes.ImageInfo) (*runtime.Image, error) {
 		Size_:       size,
 		Uid:         uid,
 		Username:    username,
+		Volumes:     parseVolumesFromPouch(image.Config.Volumes),
 	}, nil
 }
 
@@ -790,4 +791,77 @@ func (c *CriManager) attachLog(logPath string, containerID string) error {
 		return fmt.Errorf("failed to attach to container %q to get its log: %v", containerID, err)
 	}
 	return nil
+}
+
+// CRI extension related tool functions.
+
+// parseWeightDeviceFromAPI parse WeightDevice from runtime.WeightDevice to apitypes.WeightDevice
+func parseWeightDeviceFromAPI(runtimeWeightDevice []*runtime.WeightDevice) []*apitypes.WeightDevice {
+	var weightDevice []*apitypes.WeightDevice
+	for k, v := range runtimeWeightDevice {
+		weightDevice[k].Path = v.GetPath()
+		weightDevice[k].Weight = uint16(v.GetWeight())
+	}
+	return weightDevice
+}
+
+// parseWeightDeviceFromAPI parse WeightDevice from apitypes.WeightDevice to runtime.WeightDevice
+func parseWeightDeviceFromPouch(apitypesWeightDevice []*apitypes.WeightDevice) []*runtime.WeightDevice {
+	var weightDevice []*runtime.WeightDevice
+	for k, v := range apitypesWeightDevice {
+		weightDevice[k].Path = v.Path
+		weightDevice[k].Weight = uint32(v.Weight)
+	}
+	return weightDevice
+}
+
+// parseThrottleDeviceFromAPI parse ThrottleDevice from runtime.WeightDevice to apitypes.WeightDevice
+func parseThrottleDeviceFromAPI(runtimeThrottleDevice []*runtime.ThrottleDevice) []*apitypes.ThrottleDevice {
+	var throttleDevice []*apitypes.ThrottleDevice
+	for k, v := range runtimeThrottleDevice {
+		throttleDevice[k].Path = v.GetPath()
+		throttleDevice[k].Rate = v.GetRate()
+	}
+	return throttleDevice
+}
+
+// parseThrottleDeviceFromPouch parse ThrottleDevice from apitypes.WeightDevice to runtime.WeightDevice
+func parseThrottleDeviceFromPouch(apitypesThrottleDevice []*apitypes.ThrottleDevice) []*runtime.ThrottleDevice {
+	var throttleDevice []*runtime.ThrottleDevice
+	for k, v := range apitypesThrottleDevice {
+		throttleDevice[k].Path = v.Path
+		throttleDevice[k].Rate = v.Rate
+	}
+	return throttleDevice
+}
+
+// parseUlimitFromAPI parse Ulimit from runtime.Ulimit to apitypes.Ulimit
+func parseUlimitFromAPI(runtimeUlimit []*runtime.Ulimit) []*apitypes.Ulimit {
+	var ulimit []*apitypes.Ulimit
+	for k, v := range runtimeUlimit {
+		ulimit[k].Hard = v.GetHard()
+		ulimit[k].Name = v.GetName()
+		ulimit[k].Soft = v.GetSoft()
+	}
+	return ulimit
+}
+
+// parseUlimitFromPouch parse Ulimit from apitypes.Ulimit to runtime.Ulimit
+func parseUlimitFromPouch(apitypesUlimit []*apitypes.Ulimit) []*runtime.Ulimit {
+	var ulimit []*runtime.Ulimit
+	for k, v := range apitypesUlimit {
+		ulimit[k].Hard = v.Hard
+		ulimit[k].Name = v.Name
+		ulimit[k].Soft = v.Soft
+	}
+	return ulimit
+}
+
+// parseVolumesFromPouch parse Volumes from map[string]interface{} to map[string]*runtime.Volume
+func parseVolumesFromPouch(containerVolumes map[string]interface{}) map[string]*runtime.Volume {
+	volumes := make(map[string]*runtime.Volume)
+	for k, v := range containerVolumes {
+		volumes[k] = v.(*runtime.Volume)
+	}
+	return volumes
 }
