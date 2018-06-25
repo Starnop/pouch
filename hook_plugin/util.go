@@ -14,6 +14,8 @@ import (
 	"time"
 
 	. "github.com/alibaba/pouch/apis/types"
+
+	"github.com/vishvananda/netlink"
 	"github.com/sirupsen/logrus"
 )
 
@@ -59,6 +61,18 @@ func addParamsForOverlay(m map[string]string, env []string) {
 	}
 }
 
+func findBridgeIf() string {
+	if iface, err := netlink.LinkByName("p0"); err == nil && iface != nil {
+		return "p0"
+	}
+
+	if iface, err := netlink.LinkByName("docker0"); err == nil && iface != nil {
+		return "docker0"
+	}
+
+	return "p0"
+}
+
 func prepareNetwork(requestedIP, defaultRoute, mask, nic string, networkMode string, EndpointsConfig map[string]*EndpointSettings, rawEnv []string) (nwName string, err error) {
 	nwName = networkMode
 	nwIf := nic
@@ -68,8 +82,8 @@ func prepareNetwork(requestedIP, defaultRoute, mask, nic string, networkMode str
 	}
 
 	if nic == "bond0" || nic == "docker0" {
-		nwName = "p0_" + defaultRoute
-		nwIf = "p0"
+		nwIf = findBridgeIf()
+		nwName = nwIf + "_" + defaultRoute
 	} else if networkMode == "aisnet" {
 		nwName = "aisnet_" + defaultRoute
 	} else {
