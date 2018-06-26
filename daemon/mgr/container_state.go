@@ -90,6 +90,7 @@ func (c *Container) SetStatusRunning(pid int64) {
 	c.State.StartedAt = time.Now().UTC().Format(utils.TimeLayout)
 	c.State.Pid = pid
 	c.State.ExitCode = 0
+	c.State.Running = true
 }
 
 // SetStatusStopped sets a container to be status stopped.
