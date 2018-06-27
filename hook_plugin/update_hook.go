@@ -15,6 +15,11 @@ import (
 func (c ContPlugin) PostUpdate(rootfs string, env []string) error {
 	logrus.Infof("post update method called")
 
+	// if rootfs not exist, return
+	if _, err := os.Stat(rootfs); err != nil {
+		return nil
+	}
+
 	var (
 		str              string
 		propertiesEnvStr string
