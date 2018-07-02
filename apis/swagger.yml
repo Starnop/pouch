@@ -2941,16 +2941,22 @@ definitions:
   ProcessConfig:
     type: "object"
     description: ExecProcessConfig holds information about the exec process.
+    required: [privileged, user, tty, entrypoint, arguments]
     properties:
       privileged:
+        x-nullable: false
         type: "boolean"
       user:
+        x-nullable: false
         type: "string"
       tty:
+        x-nullable: false
         type: "boolean"
       entrypoint:
+        x-nullable: false
         type: "string"
       arguments:
+        x-nullable: false
         type: "array"
         items:
           type: "string"
