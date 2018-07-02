@@ -7,8 +7,8 @@ import (
 	"os"
 	"time"
 
+	"github.com/alibaba/pouch/cri/apis/cri/v1alpha1/runtime"
 	"github.com/sirupsen/logrus"
-	"k8s.io/kubernetes/pkg/kubelet/apis/cri/v1alpha1/runtime"
 )
 
 const (

@@ -708,10 +708,7 @@ func (c *CriManager) ContainerStatus(ctx context.Context, r *runtime.ContainerSt
 			BlkioDeviceWrite_IOps: parseThrottleDeviceFromPouch(resources.BlkioDeviceWriteIOps),
 			KernelMemory:          resources.KernelMemory,
 			MemoryReservation:     resources.MemoryReservation,
-			MemorySwappiness: &runtime.Int64Value{
-				Value: *resources.MemorySwappiness,
-			},
-			Ulimits: parseUlimitFromPouch(resources.Ulimits),
+			Ulimits:               parseUlimitFromPouch(resources.Ulimits),
 		},
 	}
 
