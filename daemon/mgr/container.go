@@ -61,7 +61,7 @@ type ContainerMgr interface {
 	Get(ctx context.Context, name string) (*Container, error)
 
 	// List returns the list of containers.
-	List(ctx context.Context, filter ContainerFilter, option *ContainerListOption) ([]*Container, error)
+	List(ctx context.Context, option *ContainerListOption) ([]*Container, error)
 
 	// Start a container.
 	Start(ctx context.Context, id, detachKeys string) error
@@ -191,11 +191,12 @@ func NewContainerManager(ctx context.Context, store *meta.Store, cli ctrd.APICli
 func (mgr *ContainerManager) Restore(ctx context.Context) error {
 	fn := func(obj meta.Object) error {
 		container, ok := obj.(*Container)
-		id := container.ID
 		if !ok {
 			// object has not type of Container
 			return nil
 		}
+
+		id := container.ID
 
 		// map container's name to id.
 		mgr.NameToID.Put(container.Name, id)
@@ -209,7 +210,7 @@ func (mgr *ContainerManager) Restore(ctx context.Context) error {
 		}
 
 		// recover the running or paused container.
-		io, err := mgr.openContainerIO(id, container.Config.OpenStdin)
+		io, err := mgr.openContainerIO(container)
 		if err != nil {
 			logrus.Errorf("failed to recover container: %s,  %v", id, err)
 		}
@@ -304,9 +305,11 @@ func (mgr *ContainerManager) Create(ctx context.Context, name string, config *ty
 		}
 	}
 
-	// FIXME(fuwei): only support LogConfig is json-file right now
-	config.HostConfig.LogConfig = &types.LogConfig{
-		LogDriver: types.LogConfigLogDriverJSONFile,
+	// set default log driver and validate for logger driver
+	if config.HostConfig.LogConfig == nil {
+		config.HostConfig.LogConfig = &types.LogConfig{
+			LogDriver: types.LogConfigLogDriverJSONFile,
+		}
 	}
 
 	container := &Container{
@@ -321,6 +324,11 @@ func (mgr *ContainerManager) Create(ctx context.Context, name string, config *ty
 		Config:     &config.ContainerConfig,
 		Created:    time.Now().UTC().Format(utils.TimeLayout),
 		HostConfig: config.HostConfig,
+	}
+
+	// validate log config
+	if err := mgr.validateLogConfig(container); err != nil {
+		return nil, err
 	}
 
 	// parse volume config
@@ -377,8 +385,11 @@ func (mgr *ContainerManager) Create(ctx context.Context, name string, config *ty
 		container.Snapshotter.Data["UpperDir"] = upperDir
 	}
 
+	// amendContainerSettings modify container config settings to wanted
+	amendContainerSettings(&config.ContainerConfig, config.HostConfig)
+
 	// validate container Config
-	warnings, err := validateConfig(config)
+	warnings, err := validateConfig(&config.ContainerConfig, config.HostConfig, false)
 	if err != nil {
 		return nil, err
 	}
@@ -408,33 +419,6 @@ func (mgr *ContainerManager) Get(ctx context.Context, name string) (*Container, 
 	}
 
 	return c, nil
-}
-
-// List returns the container's list.
-func (mgr *ContainerManager) List(ctx context.Context, filter ContainerFilter, option *ContainerListOption) ([]*Container, error) {
-	cons := []*Container{}
-
-	list, err := mgr.Store.List()
-	if err != nil {
-		return nil, err
-	}
-
-	for _, obj := range list {
-		c, ok := obj.(*Container)
-		if !ok {
-			return nil, fmt.Errorf("failed to get container list, invalid meta type")
-		}
-		// TODO: make func filter with no data race
-		if filter != nil && filter(c) {
-			if option.All {
-				cons = append(cons, c)
-			} else if c.IsRunningOrPaused() {
-				cons = append(cons, c)
-			}
-		}
-	}
-
-	return cons, nil
 }
 
 // Start a pre created Container.
@@ -604,7 +588,7 @@ func (mgr *ContainerManager) createContainerdContainer(ctx context.Context, c *C
 	}
 
 	// open container's stdio.
-	io, err := mgr.openContainerIO(c.ID, c.Config.OpenStdin)
+	io, err := mgr.openContainerIO(c)
 	if err != nil {
 		return errors.Wrap(err, "failed to open io")
 	}
@@ -813,7 +797,7 @@ func (mgr *ContainerManager) Attach(ctx context.Context, name string, attach *At
 		return err
 	}
 
-	_, err = mgr.openAttachIO(c.ID, attach)
+	_, err = mgr.openAttachIO(c, attach)
 	if err != nil {
 		return err
 	}
@@ -855,6 +839,14 @@ func (mgr *ContainerManager) Update(ctx context.Context, name string, config *ty
 		return err
 	}
 
+	warnings, err := validateResource(&config.Resources, true)
+	if err != nil {
+		return err
+	}
+	if len(warnings) != 0 {
+		logrus.Warnf("warnings update %s: %v", name, warnings)
+	}
+
 	restore := false
 	configBack := *c.Config
 	hostconfigBack := *c.HostConfig
@@ -869,6 +861,11 @@ func (mgr *ContainerManager) Update(ctx context.Context, name string, config *ty
 
 	if c.IsRunning() && config.Resources.KernelMemory != 0 {
 		return fmt.Errorf("failed to update container %s: can not update kernel memory to a running container, please stop it first", c.ID)
+	}
+
+	// update container disk quota
+	if err := mgr.updateContainerDiskQuota(ctx, c, config.DiskQuota); err != nil {
+		return errors.Wrapf(err, "failed to update diskquota of container %s", c.ID)
 	}
 
 	c.Lock()
@@ -899,18 +896,17 @@ func (mgr *ContainerManager) Update(ctx context.Context, name string, config *ty
 	// TODO(ziren): we should use meta.Config.DiskQuota to record container diskquota
 	// compatibility with alidocker, when set DiskQuota for container
 	// add a DiskQuota label
-	if config.DiskQuota != "" {
+	if config.DiskQuota != nil {
 		if _, ok := c.Config.Labels["DiskQuota"]; ok {
-			c.Config.Labels["DiskQuota"] = config.DiskQuota
+			labels := []string{}
+			for dir, quota := range c.Config.DiskQuota {
+				labels = append(labels, fmt.Sprintf("%s=%s", dir, quota))
+			}
+			c.Config.Labels["DiskQuota"] = strings.Join(labels, ";")
 		}
 	}
 
 	c.Unlock()
-
-	// update container disk quota
-	if err := mgr.updateContainerDiskQuota(ctx, c, config.DiskQuota); err != nil {
-		return errors.Wrapf(err, "failed to update diskquota of container %s", c.ID)
-	}
 
 	// update Resources of a container.
 	if err := mgr.updateContainerResources(c, config.Resources); err != nil {
@@ -1051,18 +1047,15 @@ func (mgr *ContainerManager) Remove(ctx context.Context, name string, options *t
 	return nil
 }
 
-func (mgr *ContainerManager) updateContainerDiskQuota(ctx context.Context, c *Container, diskQuota string) error {
-	if diskQuota == "" {
+func (mgr *ContainerManager) updateContainerDiskQuota(ctx context.Context, c *Container, diskQuota map[string]string) error {
+	if diskQuota == nil {
 		return nil
 	}
 
-	quotaMap, err := opts.ParseDiskQuota([]string{diskQuota})
-	if err != nil {
-		return errors.Wrapf(err, "failed to parse disk quota")
-	}
-
 	c.Lock()
-	c.Config.DiskQuota = quotaMap
+	for dir, quota := range diskQuota {
+		c.Config.DiskQuota[dir] = quota
+	}
 	c.Unlock()
 
 	// set mount point disk quota
@@ -1093,7 +1086,7 @@ func (mgr *ContainerManager) updateContainerDiskQuota(ctx context.Context, c *Co
 	c.Unlock()
 
 	// get rootfs quota
-	defaultQuota := quota.GetDefaultQuota(quotaMap)
+	defaultQuota := quota.GetDefaultQuota(c.Config.DiskQuota)
 	if qid > 0 && defaultQuota == "" {
 		return fmt.Errorf("set quota id but have no set default quota size")
 	}
@@ -1586,23 +1579,22 @@ func (mgr *ContainerManager) Disconnect(ctx context.Context, containerName, netw
 	return nil
 }
 
-func (mgr *ContainerManager) openContainerIO(id string, stdin bool) (*containerio.IO, error) {
-	if io := mgr.IOs.Get(id); io != nil {
+func (mgr *ContainerManager) openContainerIO(c *Container) (*containerio.IO, error) {
+	if io := mgr.IOs.Get(c.ID); io != nil {
 		return io, nil
 	}
 
-	root := mgr.Store.Path(id)
+	logInfo := mgr.convContainerToLoggerInfo(c)
 	options := []func(*containerio.Option){
-		containerio.WithID(id),
-		containerio.WithRootDir(root),
-		containerio.WithJSONFile(),
-		containerio.WithStdin(stdin),
+		containerio.WithID(c.ID),
+		containerio.WithLoggerInfo(logInfo),
+		containerio.WithStdin(c.Config.OpenStdin),
 	}
 
+	options = append(options, logOptionsForContainerio(c)...)
+
 	io := containerio.NewIO(containerio.NewOption(options...))
-
-	mgr.IOs.Put(id, io)
-
+	mgr.IOs.Put(c.ID, io)
 	return io, nil
 }
 
@@ -1673,6 +1665,7 @@ func (mgr *ContainerManager) connectToNetwork(ctx context.Context, container *Co
 	return mgr.updateNetworkConfig(container, networkIDOrName, endpoint.EndpointConfig)
 }
 
+// FIXME: remove this useless functions
 func (mgr *ContainerManager) updateNetworkSettings(container *Container, n libnetwork.Network) error {
 	if container.NetworkSettings == nil {
 		container.NetworkSettings = &types.NetworkSettings{Networks: make(map[string]*types.EndpointSettings)}
@@ -1725,19 +1718,17 @@ func (mgr *ContainerManager) openExecIO(id string, attach *AttachConfig) (*conta
 	}
 
 	io := containerio.NewIO(containerio.NewOption(options...))
-
 	mgr.IOs.Put(id, io)
-
 	return io, nil
 }
 
-func (mgr *ContainerManager) openAttachIO(id string, attach *AttachConfig) (*containerio.IO, error) {
-	rootDir := mgr.Store.Path(id)
+func (mgr *ContainerManager) openAttachIO(c *Container, attach *AttachConfig) (*containerio.IO, error) {
+	logInfo := mgr.convContainerToLoggerInfo(c)
 	options := []func(*containerio.Option){
-		containerio.WithID(id),
-		containerio.WithRootDir(rootDir),
-		containerio.WithJSONFile(),
+		containerio.WithID(c.ID),
+		containerio.WithLoggerInfo(logInfo),
 	}
+	options = append(options, logOptionsForContainerio(c)...)
 
 	if attach != nil {
 		options = append(options, attachConfigToOptions(attach)...)
@@ -1746,15 +1737,13 @@ func (mgr *ContainerManager) openAttachIO(id string, attach *AttachConfig) (*con
 		options = append(options, containerio.WithDiscard())
 	}
 
-	io := mgr.IOs.Get(id)
+	io := mgr.IOs.Get(c.ID)
 	if io != nil {
 		io.AddBackend(containerio.NewOption(options...))
 	} else {
 		io = containerio.NewIO(containerio.NewOption(options...))
 	}
-
-	mgr.IOs.Put(id, io)
-
+	mgr.IOs.Put(c.ID, io)
 	return io, nil
 }
 
@@ -1942,6 +1931,15 @@ func (mgr *ContainerManager) releaseContainerResources(c *Container) error {
 func (mgr *ContainerManager) releaseContainerNetwork(c *Container) error {
 	c.Lock()
 	defer c.Unlock()
+
+	// NetworkMgr is nil, which means the pouch daemon is initializing.
+	// And the libnetwork will also initialize, which will release all
+	// staled network resources(endpoint, network and namespace). So we
+	// don't need release the network resources.
+	if mgr.NetworkMgr == nil {
+		return nil
+	}
+
 	if c.NetworkSettings == nil {
 		return nil
 	}

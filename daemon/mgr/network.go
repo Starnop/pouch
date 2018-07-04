@@ -6,7 +6,6 @@ import (
 	"net"
 	"path"
 	"strings"
-	"time"
 
 	apitypes "github.com/alibaba/pouch/apis/types"
 	"github.com/alibaba/pouch/daemon/config"
@@ -16,7 +15,6 @@ import (
 	"github.com/alibaba/pouch/pkg/meta"
 	"github.com/alibaba/pouch/pkg/randomid"
 
-	netlog "github.com/Sirupsen/logrus"
 	"github.com/docker/go-connections/nat"
 	"github.com/docker/libnetwork"
 	nwconfig "github.com/docker/libnetwork/config"
@@ -75,13 +73,13 @@ func NewNetworkManager(cfg *config.Config, store *meta.Store, ctrMgr ContainerMg
 		cfg.NetworkConfig.ExecRoot = network.DefaultExecRoot
 	}
 
-	initNetworkLog(cfg)
-
 	// get active sandboxes
 	ctrs, err := ctrMgr.List(context.Background(),
-		func(c *Container) bool {
-			return (c.IsRunning() || c.IsPaused()) && !isContainer(c.HostConfig.NetworkMode)
-		}, &ContainerListOption{All: true})
+		&ContainerListOption{
+			All: true,
+			FilterFunc: func(c *Container) bool {
+				return (c.IsRunning() || c.IsPaused()) && !isContainer(c.HostConfig.NetworkMode)
+			}})
 	if err != nil {
 		logrus.Errorf("failed to new network manager, can not get container list")
 		return nil, errors.Wrap(err, "failed to get container list")
@@ -288,6 +286,12 @@ func (nm *NetworkManager) EndpointCreate(ctx context.Context, endpoint *types.En
 	}
 
 	endpointName := containerID[:8]
+
+	// ensure the endpoint has been deleted before creating
+	if ep, _ := n.EndpointByName(endpointName); ep != nil {
+		ep.Delete(true)
+	}
+
 	ep, err := n.CreateEndpoint(endpointName, epOptions...)
 	if err != nil {
 		return "", err
@@ -489,7 +493,7 @@ func networkOptions(create apitypes.NetworkCreateConfig) ([]libnetwork.NetworkOp
 	nwOptions = append(nwOptions, libnetwork.NetworkOptionDriverOpts(networkCreate.Options))
 
 	if create.Name == "ingress" {
-		nwOptions = append(nwOptions, libnetwork.NetworkOptionIngress())
+		nwOptions = append(nwOptions, libnetwork.NetworkOptionIngress(true))
 	}
 
 	if networkCreate.Internal {
@@ -540,20 +544,6 @@ func (nm *NetworkManager) getNetworkSandbox(id string) libnetwork.Sandbox {
 		return false
 	})
 	return sb
-}
-
-// libnetwork's logrus version is different from pouchd,
-// so we need to set libnetwork's logrus addintionly.
-func initNetworkLog(cfg *config.Config) {
-	if cfg.Debug {
-		netlog.SetLevel(netlog.DebugLevel)
-	}
-
-	formatter := &netlog.TextFormatter{
-		FullTimestamp:   true,
-		TimestampFormat: time.RFC3339Nano,
-	}
-	netlog.SetFormatter(formatter)
 }
 
 func endpointOptions(n libnetwork.Network, endpoint *types.Endpoint) ([]libnetwork.EndpointOption, error) {

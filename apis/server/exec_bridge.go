@@ -28,8 +28,7 @@ func (s *Server) createContainerExec(ctx context.Context, rw http.ResponseWriter
 
 	name := mux.Vars(req)["name"]
 
-	ba, _ := json.Marshal(config)
-	logrus.Infof("create exec %s: %s", name, string(ba))
+	logCreateOptions("container exec for "+name, config)
 
 	id, err := s.ContainerMgr.CreateExec(ctx, name, config)
 	if err != nil {

@@ -18,7 +18,6 @@ type UpdateCommand struct {
 	baseCommand
 	container
 	image string
-	quota string
 }
 
 // Init initialize update command.
@@ -43,7 +42,7 @@ func (uc *UpdateCommand) addFlags() {
 	flagSet.SetInterspersed(false)
 	flagSet.Uint16Var(&uc.blkioWeight, "blkio-weight", 0, "Block IO (relative weight), between 10 and 1000, or 0 to disable")
 	flagSet.Int64Var(&uc.cpuperiod, "cpu-period", 0, "Limit CPU CFS (Completely Fair Scheduler) period, range is in [1000(1ms),1000000(1s)]")
-	flagSet.Int64Var(&uc.cpushare, "cpu-share", 0, "CPU shares (relative weight)")
+	flagSet.Int64Var(&uc.cpushare, "cpu-shares", 0, "CPU shares (relative weight)")
 	flagSet.Int64Var(&uc.cpuquota, "cpu-quota", 0, "Limit CPU CFS (Completely Fair Scheduler) quota")
 	flagSet.StringVar(&uc.cpusetcpus, "cpuset-cpus", "", "CPUs in cpuset")
 	flagSet.StringVar(&uc.cpusetmems, "cpuset-mems", "", "MEMs in cpuset")
@@ -52,7 +51,7 @@ func (uc *UpdateCommand) addFlags() {
 	flagSet.StringSliceVarP(&uc.env, "env", "e", nil, "Set environment variables for container")
 	flagSet.StringSliceVarP(&uc.labels, "label", "l", nil, "Set label for container")
 	flagSet.StringVar(&uc.restartPolicy, "restart", "", "Restart policy to apply when container exits")
-	flagSet.StringVar(&uc.quota, "quota", "", "Update disk quota for container")
+	flagSet.StringSliceVar(&uc.diskQuota, "disk-quota", nil, "Update disk quota for container(/=10g)")
 }
 
 // updateRun is the entry of update command.
@@ -86,12 +85,17 @@ func (uc *UpdateCommand) updateRun(args []string) error {
 		return err
 	}
 
+	diskQuota, err := opts.ParseDiskQuota(uc.diskQuota)
+	if err != nil {
+		return err
+	}
+
 	updateConfig := &types.UpdateConfig{
 		Env:           uc.env,
 		Label:         uc.labels,
 		RestartPolicy: restartPolicy,
 		Resources:     resource,
-		DiskQuota:     uc.quota,
+		DiskQuota:     diskQuota,
 	}
 
 	apiClient := uc.cli.Client()

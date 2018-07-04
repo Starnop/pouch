@@ -13,6 +13,7 @@ import (
 	"github.com/alibaba/pouch/daemon/mgr"
 	"github.com/alibaba/pouch/pkg/httputils"
 	"github.com/alibaba/pouch/pkg/utils"
+	"github.com/alibaba/pouch/pkg/utils/filters"
 
 	"github.com/go-openapi/strfmt"
 	"github.com/gorilla/mux"
@@ -115,9 +116,13 @@ func (s *Server) getContainers(ctx context.Context, rw http.ResponseWriter, req 
 		All: httputils.BoolValue(req, "all"),
 	}
 
-	cons, err := s.ContainerMgr.List(ctx, func(c *mgr.Container) bool {
-		return true
-	}, option)
+	filters, err := filters.FromURLParam(req.FormValue("filters"))
+	if err != nil {
+		return err
+	}
+	option.Filter = filters
+
+	cons, err := s.ContainerMgr.List(ctx, option)
 	if err != nil {
 		return err
 	}
@@ -300,12 +305,19 @@ func (s *Server) attachContainer(ctx context.Context, rw http.ResponseWriter, re
 
 func (s *Server) updateContainer(ctx context.Context, rw http.ResponseWriter, req *http.Request) error {
 	config := &types.UpdateConfig{}
-	// decode request body
-	if err := json.NewDecoder(req.Body).Decode(config); err != nil {
-		return httputils.NewHTTPError(err, http.StatusBadRequest)
+
+	// set pre update hook plugin
+	reader := req.Body
+	if s.ContainerPlugin != nil {
+		var err error
+		logrus.Infof("invoke container pre-update hook in plugin")
+		if reader, err = s.ContainerPlugin.PreUpdate(req.Body); err != nil {
+			return errors.Wrapf(err, "failed to execute pre-create plugin point")
+		}
 	}
-	// validate request body
-	if err := config.Validate(strfmt.NewFormats()); err != nil {
+
+	// decode request body
+	if err := json.NewDecoder(reader).Decode(config); err != nil {
 		return httputils.NewHTTPError(err, http.StatusBadRequest)
 	}
 

@@ -93,12 +93,12 @@ func (suite *PouchUpgradeSuite) TestPouchUpgradeContainerMemCpu(c *check.C) {
 	name := "TestPouchUpgradeContainerMemCpu"
 
 	res := command.PouchRun("run", "-d", "-m", "300m",
-		"--cpu-share", "20", "--name", name, busyboxImage, "top")
+		"--cpu-shares", "20", "--name", name, busyboxImage, "top")
 	defer DelContainerForceMultyTime(c, name)
 	res.Assert(c, icmd.Success)
 
 	command.PouchRun("upgrade", "-m", "500m",
-		"--cpu-share", "40", "--name", name, busyboxImage125).Assert(c, icmd.Success)
+		"--cpu-shares", "40", "--name", name, busyboxImage125).Assert(c, icmd.Success)
 
 	output := command.PouchRun("inspect", name).Stdout()
 	result := []types.ContainerJSON{}
@@ -145,8 +145,7 @@ func (suite *PouchUpgradeSuite) TestPouchUpgradeContainerMemCpu(c *check.C) {
 func (suite *PouchUpgradeSuite) TestPouchUpgradeContainerLabels(c *check.C) {
 	name := "TestPouchUpgradeContainerLabels"
 
-	res := command.PouchRun("run", "-d", "--label", "test=foo",
-		"--name", name, busyboxImage)
+	res := command.PouchRun("run", "-d", "--label", "test=foo", "--name", name, busyboxImage, "top")
 	defer DelContainerForceMultyTime(c, name)
 	res.Assert(c, icmd.Success)
 
