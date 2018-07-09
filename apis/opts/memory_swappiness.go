@@ -6,7 +6,7 @@ import "fmt"
 
 // ValidateMemorySwappiness verifies the correctness of memory-swappiness.
 func ValidateMemorySwappiness(memorySwappiness int64) error {
-	if memorySwappiness < 0 || memorySwappiness > 100 {
+	if (memorySwappiness < 0 || memorySwappiness > 100) && memorySwappiness != -1 {
 		return fmt.Errorf("invalid memory swappiness: %d (its range is 0-100)", memorySwappiness)
 	}
 	return nil
