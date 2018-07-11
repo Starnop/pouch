@@ -19,7 +19,6 @@ import (
 	"github.com/alibaba/pouch/pkg/meta"
 	"github.com/alibaba/pouch/pkg/system"
 
-	"github.com/containerd/containerd/namespaces"
 	systemddaemon "github.com/coreos/go-systemd/daemon"
 	systemdutil "github.com/coreos/go-systemd/util"
 	"github.com/gorilla/mux"
@@ -72,10 +71,9 @@ func NewDaemon(cfg *config.Config) *Daemon {
 		containerdBinaryFile = cfg.ContainerdPath
 	}
 
-	defaultns := namespaces.Default
 	// the default unix socket path to the containerd socket
 	if cfg.IsCriEnabled {
-		defaultns = criconfig.K8sNamespace
+		cfg.Namespace = criconfig.K8sNamespace
 	}
 
 	containerd, err := ctrd.NewClient(cfg.HomeDir,
@@ -84,7 +82,7 @@ func NewDaemon(cfg *config.Config) *Daemon {
 		ctrd.WithContainerdBinary(containerdBinaryFile),
 		ctrd.WithRPCAddr(cfg.ContainerdAddr),
 		ctrd.WithOOMScoreAdjust(cfg.OOMScoreAdjust),
-		ctrd.WithDefaultNamespace(defaultns),
+		ctrd.WithDefaultNamespace(cfg.Namespace),
 	)
 	if err != nil {
 		logrus.Errorf("failed to new containerd's client: %v", err)
