@@ -26,7 +26,7 @@ func containerdImageToOciImage(ctx context.Context, img containerd.Image) (ocisp
 	}
 
 	switch cfg.MediaType {
-	case ocispec.MediaTypeImageConfig, images.MediaTypeDockerSchema2Config:
+	case ocispec.MediaTypeImageConfig, images.MediaTypeDockerSchema2Config, images.MediaTypeDockerOctetStreamConfig:
 		data, err := content.ReadBlob(ctx, img.ContentStore(), cfg.Digest)
 		if err != nil {
 			return ocispec.Image{}, err
