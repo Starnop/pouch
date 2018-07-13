@@ -207,6 +207,14 @@ func (c ContPlugin) PreCreate(in io.ReadCloser) (io.ReadCloser, error) {
 		}
 	}
 
+	// add net-priority into spec-annotations
+	if createConfig.NetPriority != 0 {
+		if createConfig.SpecAnnotation == nil {
+			createConfig.SpecAnnotation = make(map[string]string)
+		}
+		createConfig.SpecAnnotation["net-priority"] = strconv.FormatInt(createConfig.NetPriority, 10)
+	}
+
 	// marshal it as stream and return to the caller
 	var out bytes.Buffer
 	err = json.NewEncoder(&out).Encode(createConfig)
