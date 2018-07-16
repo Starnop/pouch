@@ -1231,7 +1231,7 @@ func (mgr *ContainerManager) updateContainerEnv(containerEnvs []string, baseFs s
 
 	// load container's env file if exist
 	if _, err := os.Stat(envShPath); err != nil {
-		return fmt.Errorf("failed to state container's env file /etc/profile.d/pouchenv.sh: %v", err)
+		return nil
 	}
 	// update /etc/profile.d/pouchnv.sh
 	b, err := ioutil.ReadFile(envShPath)

@@ -115,7 +115,7 @@ type Config struct {
 	Runtimes map[string]types.Runtime `json:"add-runtime,omitempty"`
 
 	// Namespace is passed to containerd
-	Namespace string
+	Namespace string `json:"-"`
 }
 
 // Validate validates the user input config.
