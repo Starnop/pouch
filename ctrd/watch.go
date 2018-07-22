@@ -2,6 +2,7 @@ package ctrd
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -72,6 +73,7 @@ func (w *watch) add(pack *containerPack) {
 		// if containerd is dead, the task.Wait channel return is not because
 		// container' task quit, but the channel has broken.
 		// so we just return.
+		// container dead statu is set
 		if w.isContainerdDead() {
 			return
 		}
@@ -128,7 +130,7 @@ func (w *watch) get(id string) (*containerPack, error) {
 
 	pack, ok := w.containers[id]
 	if !ok {
-		return pack, errtypes.ErrNotfound
+		return pack, fmt.Errorf("failed to find container %s in metadata", id)
 	}
 	return pack, nil
 }
