@@ -1130,7 +1130,7 @@ func (mgr *ContainerManager) updateContainerDiskQuota(ctx context.Context, c *Co
 		qid = uint32(id)
 		if id < 0 {
 			// QuotaID is < 0, it means pouchd alloc a unique quota id.
-			qid, err = quota.GetNextQuatoID()
+			qid, err = quota.GetNextQuotaID()
 			if err != nil {
 				return errors.Wrap(err, "failed to get next quota id")
 			}
@@ -2375,7 +2375,7 @@ func (mgr *ContainerManager) setMountPointDiskQuota(ctx context.Context, c *Cont
 
 		// if QuotaID is < 0, it means pouchd alloc a unique quota id.
 		if id < 0 {
-			qid, err = quota.GetNextQuatoID()
+			qid, err = quota.GetNextQuotaID()
 			if err != nil {
 				return errors.Wrap(err, "failed to get next quota id")
 			}
@@ -2451,7 +2451,9 @@ func (mgr *ContainerManager) setMountPointDiskQuota(ctx context.Context, c *Cont
 		}
 		err := quota.SetDiskQuota(mp.Source, size, qid)
 		if err != nil {
-			return err
+			// just ignore set disk quota fail
+			logrus.Warnf("failed to set disk quota, directory: (%s), size: (%s), quota id: (%d), err: (%v)",
+				mp.Source, size, qid, err)
 		}
 	}
 
