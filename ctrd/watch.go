@@ -2,12 +2,12 @@ package ctrd
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"time"
 
 	"github.com/alibaba/pouch/pkg/errtypes"
 
+	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
 
@@ -137,7 +137,7 @@ func (w *watch) get(id string) (*containerPack, error) {
 
 	pack, ok := w.containers[id]
 	if !ok {
-		return pack, fmt.Errorf("failed to find container %s in metadata", id)
+		return pack, errors.Wrapf(errtypes.ErrNotfound, "container %s in metadata", id)
 	}
 	return pack, nil
 }
@@ -150,7 +150,7 @@ func (w *watch) notify(id string) chan *Message {
 	if !ok {
 		ch := make(chan *Message, 1)
 		ch <- &Message{
-			err: errtypes.ErrNotfound,
+			err: errors.Wrapf(errtypes.ErrNotfound, "container %s in metadata", id),
 		}
 		return ch
 	}

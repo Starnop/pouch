@@ -158,6 +158,14 @@
 			"versionExact": "v1.0.3"
 		},
 		{
+			"checksumSHA1": "5pKxGJe3gsS/LjW8ZklKJvSXBMs=",
+			"path": "github.com/containerd/containerd/api/events",
+			"revision": "773c489c9c1b21a6d78b5c538cd395416ec50f88",
+			"revisionTime": "2018-04-02T20:34:37Z",
+			"version": "v1.0.3",
+			"versionExact": "v1.0.3"
+		},
+		{
 			"checksumSHA1": "V/ZFMKUvTntwELx2zTjn/9IFUqw=",
 			"path": "github.com/containerd/containerd/api/services/containers/v1",
 			"revision": "773c489c9c1b21a6d78b5c538cd395416ec50f88",
@@ -260,6 +268,12 @@
 			"revisionTime": "2018-04-02T20:34:37Z",
 			"version": "v1.0.3",
 			"versionExact": "v1.0.3"
+		},
+		{
+			"checksumSHA1": "HoGaFt++oBcQULZwr93dpHrOonA=",
+			"path": "github.com/containerd/containerd/archive",
+			"revision": "278a4f5007eef70fab7982ec9c2a57dc371b91e0",
+			"revisionTime": "2018-06-03T08:25:26Z"
 		},
 		{
 			"checksumSHA1": "vmjGd4DU++wHR9j8jVfqnfJ1T10=",
@@ -494,6 +508,14 @@
 			"versionExact": "v1.0.3"
 		},
 		{
+			"checksumSHA1": "2PwNsRYBau8Sl+WShKZoqovwWzY=",
+			"path": "github.com/containerd/containerd/runtime",
+			"revision": "773c489c9c1b21a6d78b5c538cd395416ec50f88",
+			"revisionTime": "2018-04-02T20:34:37Z",
+			"version": "v1.0.3",
+			"versionExact": "v1.0.3"
+		},
+		{
 			"checksumSHA1": "DzMZUrndYzzDT7nqwcxHq2oC8Kc=",
 			"path": "github.com/containerd/containerd/snapshots",
 			"revision": "773c489c9c1b21a6d78b5c538cd395416ec50f88",
@@ -620,16 +642,16 @@
 			"revisionTime": "2018-01-08T23:09:05Z"
 		},
 		{
-			"checksumSHA1": "1txgvJO9bgE703kK2EQ/NATy1Rg=",
-			"path": "github.com/coreos/go-systemd/dbus",
-			"revision": "39ca1b05acc7ad1220e09f133283b8859a8b71ab",
-			"revisionTime": "2018-05-11T13:34:05Z"
-		},
-		{
 			"checksumSHA1": "dPUClu2Gew2ddf1Y5rmgvxUUFeU=",
 			"path": "github.com/coreos/go-systemd/daemon",
 			"revision": "a4887aeaa186e68961d2d6af7d5fbac6bd6fa79b",
 			"revisionTime": "2018-05-25T14:22:39Z"
+		},
+		{
+			"checksumSHA1": "1txgvJO9bgE703kK2EQ/NATy1Rg=",
+			"path": "github.com/coreos/go-systemd/dbus",
+			"revision": "39ca1b05acc7ad1220e09f133283b8859a8b71ab",
+			"revisionTime": "2018-05-11T13:34:05Z"
 		},
 		{
 			"checksumSHA1": "5GD2mlKEoDM+bU1PfSlx8rAz4oc=",
@@ -651,10 +673,10 @@
 			"tree": true
 		},
 		{
-			"checksumSHA1": "je2SUpKP4rZR5hpk1VidpPYGUWA=",
+			"checksumSHA1": "2/jWygRyq/dGS2wMjuK6cYiSvPY=",
 			"path": "github.com/cri-o/ocicni/pkg/ocicni",
-			"revision": "17d9dd2837c6facb27b618c441193e5e912f3212",
-			"revisionTime": "2018-01-11T00:30:19Z"
+			"revision": "2a19a0093d927d3ecc0e305b522c48e2213b22fd",
+			"revisionTime": "2018-02-02T23:36:03Z"
 		},
 		{
 			"checksumSHA1": "OFu4xJEIjiI8Suu+j/gabfp+y6Q=",
@@ -668,6 +690,12 @@
 			"path": "github.com/deckarep/golang-set",
 			"revision": "504e848d77ea4752b3057b8fb46da0e7f746ccf3",
 			"revisionTime": "2018-06-03T19:32:48Z"
+		},
+		{
+			"checksumSHA1": "zlJUlwvnskgPoHQgTfG3CPLCJ0g=",
+			"path": "github.com/dmcgowan/go-tar",
+			"revision": "01eea4a853c4e9ab63191abd92e8ed55be1f0928",
+			"revisionTime": "2017-07-18T22:32:38Z"
 		},
 		{
 			"checksumSHA1": "IggTTG/yCDaV9SjtQz5SSarqUtc=",
@@ -1943,12 +1971,6 @@
 			"path": "k8s.io/apiserver/pkg/util/wsstream",
 			"revision": "d3f753a815b5b1a7f4ecc1d2fdf497dc715c98c7",
 			"revisionTime": "2017-10-18T16:57:59Z"
-		},
-		{
-			"checksumSHA1": "o+lVDhZsT+PFILKt5S6CgBmcrMs=",
-			"path": "k8s.io/kubernetes/pkg/kubelet/apis/cri/runtime/v1alpha2",
-			"revision": "86bd9771515c19a8df7128f53b1c1fa4f00d64ee",
-			"revisionTime": "2018-05-23T02:20:24Z"
 		},
 		{
 			"checksumSHA1": "oRQMrak6qTTdEUnRUMtVpzO9T/A=",

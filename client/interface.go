@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 
+	"github.com/alibaba/pouch/apis/filters"
 	"github.com/alibaba/pouch/apis/types"
 )
 
@@ -21,7 +22,7 @@ type CommonAPIClient interface {
 // ContainerAPIClient defines methods of Container client.
 type ContainerAPIClient interface {
 	ContainerCreate(ctx context.Context, config types.ContainerConfig, hostConfig *types.HostConfig, networkConfig *types.NetworkingConfig, containerName string) (*types.ContainerCreateResp, error)
-	ContainerStart(ctx context.Context, name, detachKeys string) error
+	ContainerStart(ctx context.Context, name string, options types.ContainerStartOptions) error
 	ContainerStop(ctx context.Context, name, timeout string) error
 	ContainerRemove(ctx context.Context, name string, options *types.ContainerRemoveOptions) error
 	ContainerList(ctx context.Context, option types.ContainerListOptions) ([]*types.Container, error)
@@ -40,6 +41,9 @@ type ContainerAPIClient interface {
 	ContainerLogs(ctx context.Context, name string, options types.ContainerLogsOptions) (io.ReadCloser, error)
 	ContainerResize(ctx context.Context, name, height, width string) error
 	ContainerWait(ctx context.Context, name string) (types.ContainerWaitOKBody, error)
+	ContainerCheckpointCreate(ctx context.Context, name string, options types.CheckpointCreateOptions) error
+	ContainerCheckpointList(ctx context.Context, name string, options types.CheckpointListOptions) ([]string, error)
+	ContainerCheckpointDelete(ctx context.Context, name string, options types.CheckpointDeleteOptions) error
 }
 
 // ImageAPIClient defines methods of Image client.
@@ -50,6 +54,7 @@ type ImageAPIClient interface {
 	ImageRemove(ctx context.Context, name string, force bool) error
 	ImageTag(ctx context.Context, image string, tag string) error
 	ImageLoad(ctx context.Context, name string, r io.Reader) error
+	ImageSave(ctx context.Context, imageName string) (io.ReadCloser, error)
 }
 
 // VolumeAPIClient defines methods of Volume client.
@@ -67,6 +72,7 @@ type SystemAPIClient interface {
 	SystemInfo(ctx context.Context) (*types.SystemInfo, error)
 	RegistryLogin(ctx context.Context, auth *types.AuthConfig) (*types.AuthResponse, error)
 	DaemonUpdate(ctx context.Context, daemonConfig *types.DaemonUpdateConfig) error
+	Events(ctx context.Context, since string, until string, filters filters.Args) (io.ReadCloser, error)
 }
 
 // NetworkAPIClient defines methods of Network client.

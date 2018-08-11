@@ -14,16 +14,6 @@ notifications:
     on_failure: always
     on_error: always
 
-before_install:
-  |
-    git diff --name-only $TRAVIS_COMMIT_RANGE | grep -qvE '(\.md$)' || {
-      echo travis doesn\'t run for document-only changed
-      exit
-    }
-
-    sudo apt-get update -qq
-    sudo apt-get install -y -qq autoconf automake
-
 env:
   - TEST_SUITE=unittest
   - TEST_SUITE=integrationtest
@@ -31,9 +21,10 @@ env:
   - TEST_SUITE=criv1alpha2test
 
 script: |
+  set -e # fast fail
   if [[ "${TEST_SUITE}" = "unittest" ]]; then
-    hack/install/install_ci_related.sh
-    make unit-test || travis_terminate 1
+    sudo env "PATH=$PATH" hack/install/install_ci_related.sh
+    make unit-test
     make coverage
   elif [[ "${TEST_SUITE}" = "integrationtest" ]]; then
     make build
@@ -42,7 +33,7 @@ script: |
     sudo env "PATH=$PATH" make install
 
     sudo env "PATH=$PATH" make download_dependencies
-    sudo env "PATH=$PATH" make integration-test || travis_terminate 1
+    sudo env "PATH=$PATH" make integration-test
     make coverage
   elif [[ "${TEST_SUITE}" = "criv1alpha1test" ]]; then
     make build
@@ -50,7 +41,7 @@ script: |
     sudo env "PATH=$PATH" make install
 
     sudo env "PATH=$PATH" make download_dependencies
-    sudo env "PATH=$PATH" make cri-v1alpha1-test || travis_terminate 1
+    sudo env "PATH=$PATH" make cri-v1alpha1-test
     make coverage
   else
     make build
@@ -58,9 +49,9 @@ script: |
     sudo env "PATH=$PATH" make install
 
     sudo env "PATH=$PATH" make download_dependencies
-    sudo env "PATH=$PATH" make cri-v1alpha2-test || travis_terminate 1
+    sudo env "PATH=$PATH" make cri-v1alpha2-test
     make coverage
   fi
-
+  
 after_success:
-- bash <(curl -s https://codecov.io/bash) || echo Codecov_Did_Not_Collect_Coverage_Reports
+  - bash <(curl -s https://codecov.io/bash) -cF ${TEST_SUITE} -y .codecov.yml

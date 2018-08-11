@@ -389,6 +389,19 @@ func (suite *PouchDaemonSuite) TestDaemonDefaultRegistry(c *check.C) {
 	defer dcfg.KillDaemon()
 }
 
+// TestDaemonCriEnabled tests enabling cri part in pouchd.
+func (suite *PouchDaemonSuite) TestDaemonCriEnabled(c *check.C) {
+	dcfg, err := StartDefaultDaemonDebug(
+		"--enable-cri")
+	c.Assert(err, check.IsNil)
+
+	result := RunWithSpecifiedDaemon(dcfg, "info")
+	err = util.PartialEqual(result.Combined(), "CriEnabled:  true")
+	c.Assert(err, check.IsNil)
+
+	defer dcfg.KillDaemon()
+}
+
 // TestDaemonTlsVerify tests start daemon with TLS verification enabled.
 func (suite *PouchDaemonSuite) TestDaemonTlsVerify(c *check.C) {
 	SkipIfFalse(c, IsTLSExist)
@@ -470,6 +483,7 @@ func (suite *PouchDaemonSuite) TestDaemonWithMultiRuntimes(c *check.C) {
 	dcfg2.KillDaemon()
 }
 
+// TestUpdateDaemonWithLabels tests update daemon online with labels updated
 func (suite *PouchDaemonSuite) TestUpdateDaemonWithLabels(c *check.C) {
 	cfg := daemon.NewConfig()
 	err := cfg.StartDaemon()
@@ -484,4 +498,24 @@ func (suite *PouchDaemonSuite) TestUpdateDaemonWithLabels(c *check.C) {
 
 	updated := strings.Contains(ret.Stdout(), "aaa=bbb")
 	c.Assert(updated, check.Equals, true)
+}
+
+// TestUpdateDaemonWithLabels tests update daemon offline
+func (suite *PouchDaemonSuite) TestUpdateDaemonOffline(c *check.C) {
+	path := "/tmp/pouchconfig.json"
+	fd, err := os.Create(path)
+	c.Assert(err, check.IsNil)
+	fd.Close()
+	defer os.Remove(path)
+
+	cfg := daemon.NewConfig()
+	err = cfg.StartDaemon()
+	c.Assert(err, check.IsNil)
+
+	defer cfg.KillDaemon()
+
+	RunWithSpecifiedDaemon(&cfg, "updatedaemon", "--config-file", path, "--offline=true").Assert(c, icmd.Success)
+
+	ret := RunWithSpecifiedDaemon(&cfg, "info")
+	ret.Assert(c, icmd.Success)
 }

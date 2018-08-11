@@ -18,7 +18,7 @@ PouchContainer is conflict with Docker, so you must uninstall Docker before inst
 
 **Prerequisites**
 
-PouchContainer supports lxcfs to provide strong isolation, so you should install lxcfs firstly. By default, lxcfs is enabled.
+PouchContainer supports LXCFS to provide strong isolation, so you should install LXCFS firstly. By default, LXCFS is enabled.
 
 ``` bash
 sudo apt-get install lxcfs
@@ -154,6 +154,15 @@ gpasswd -a $user pouch
 
 Remind that you should relogin to make /etc/group take effect, check it by typing groups to see if your shell gets pouch group.
 
+## Run pouch command with auto-completion
+
+Pouch provides a bash completion file locate at `contrib/completion/bash/pouch`, place this file under `/usr/share/bash-completion/completions`. Source it to make it take effect, then you can enjoy pouch/pouchd commands completion.
+
+```bash
+cp contrib/completion/bash/pouch /usr/share/bash-completion/completions
+source /usr/share/bash-completion/completions/pouch
+```
+
 ## Uninstall pouch
 
 On Ubuntu
@@ -222,10 +231,10 @@ cd $GOPATH/src/github.com/alibaba/; git clone https://github.com/alibaba/pouch.g
 cd pouch; git checkout master
 ```
 
-Makefile target named `build` will compile the pouch and pouchd binaries in current work directory. Or you can just execute `make install` to build binaries and install them in destination directory (`/usr/local/bin` by default).
+Makefile target named `build` will compile the pouch and pouchd binaries into current `bin` directory. You can execute `make build && make install` to build binaries and install them in destination directory (`/usr/local/bin` by default).
 
 ``` shell
-make install
+make build && make install
 ```
 
 ### Start PouchContainer

@@ -21,6 +21,7 @@ import (
 	"github.com/containerd/cgroups"
 	containerdmount "github.com/containerd/containerd/mount"
 	"github.com/containerd/typeurl"
+	"github.com/cri-o/ocicni/pkg/ocicni"
 	"github.com/go-openapi/strfmt"
 	"golang.org/x/net/context"
 	"golang.org/x/sys/unix"
@@ -446,6 +447,11 @@ func parseContainerName(name string) (*runtime.ContainerMetadata, error) {
 		Name:    parts[1],
 		Attempt: attempt,
 	}, nil
+}
+
+// makeupLogPath makes up the log path of container from log directory and its metadata.
+func makeupLogPath(logDirectory string, metadata *runtime.ContainerMetadata) string {
+	return filepath.Join(logDirectory, fmt.Sprintf("%s_%d.log", metadata.Name, metadata.Attempt))
 }
 
 // modifyContainerNamespaceOptions apply namespace options for container.
@@ -939,4 +945,37 @@ func blkrdev(device string) (uint64, error) {
 		return stat.Rdev, nil
 	}
 	return 0, fmt.Errorf("cannot get stat of device %s", device)
+}
+
+// CRI extension related tool functions.
+
+// parseResourceFromCRI parse Resources from runtime.LinuxContainerResources to apitypes.Resources
+func parseResourcesFromCRI(runtimeResources *runtime.LinuxContainerResources) apitypes.Resources {
+	return apitypes.Resources{
+		CPUPeriod:  runtimeResources.GetCpuPeriod(),
+		CPUQuota:   runtimeResources.GetCpuQuota(),
+		CPUShares:  runtimeResources.GetCpuShares(),
+		Memory:     runtimeResources.GetMemoryLimitInBytes(),
+		CpusetCpus: runtimeResources.GetCpusetCpus(),
+		CpusetMems: runtimeResources.GetCpusetMems(),
+	}
+}
+
+// CNI Network related tool functions.
+
+// toCNIPortMappings converts CRI port mappings to CNI.
+func toCNIPortMappings(criPortMappings []*runtime.PortMapping) []ocicni.PortMapping {
+	var portMappings []ocicni.PortMapping
+	for _, mapping := range criPortMappings {
+		if mapping.HostPort <= 0 {
+			continue
+		}
+		portMappings = append(portMappings, ocicni.PortMapping{
+			HostPort:      mapping.HostPort,
+			ContainerPort: mapping.ContainerPort,
+			Protocol:      strings.ToLower(mapping.Protocol.String()),
+			HostIP:        mapping.HostIp,
+		})
+	}
+	return portMappings
 }

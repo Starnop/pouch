@@ -8,17 +8,9 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 )
-
-type tCase struct {
-	name     string
-	input    int64
-	expected string
-	err      error
-}
 
 func TestFormatSize(t *testing.T) {
 	assert := assert.New(t)
@@ -34,94 +26,6 @@ func TestFormatSize(t *testing.T) {
 		size := FormatSize(k)
 		assert.Equal(v, size)
 	}
-}
-
-func TestFormatTimeInterval(t *testing.T) {
-
-	for _, tc := range []tCase{
-		{
-			name:     "second",
-			input:    time.Now().Add(0 - Second).UnixNano(),
-			expected: "1 second",
-			err:      nil,
-		}, {
-			name:     "minute",
-			input:    time.Now().Add(0 - Minute).UnixNano(),
-			expected: "1 minute",
-			err:      nil,
-		}, {
-			name:     "hour",
-			input:    time.Now().Add(0 - Hour).UnixNano(),
-			expected: "1 hour",
-			err:      nil,
-		}, {
-			name:     "day",
-			input:    time.Now().Add(0 - Day).UnixNano(),
-			expected: "1 day",
-			err:      nil,
-		}, {
-			name:     "week",
-			input:    time.Now().Add(0 - Week).UnixNano(),
-			expected: "1 week",
-			err:      nil,
-		}, {
-			name:     "month",
-			input:    time.Now().Add(0 - Month).UnixNano(),
-			expected: "1 month",
-			err:      nil,
-		}, {
-			name:     "year",
-			input:    time.Now().Add(0 - Year).UnixNano(),
-			expected: "1 year",
-			err:      nil,
-		},
-		{
-			name:     "seconds",
-			input:    time.Now().Add(0 - Second*3).UnixNano(),
-			expected: "3 seconds",
-			err:      nil,
-		}, {
-			name:     "minutes",
-			input:    time.Now().Add(0 - Minute*3).UnixNano(),
-			expected: "3 minutes",
-			err:      nil,
-		}, {
-			name:     "hours",
-			input:    time.Now().Add(0 - Hour*3).UnixNano(),
-			expected: "3 hours",
-			err:      nil,
-		}, {
-			name:     "days",
-			input:    time.Now().Add(0 - Day*3).UnixNano(),
-			expected: "3 days",
-			err:      nil,
-		}, {
-			name:     "weeks",
-			input:    time.Now().Add(0 - Week*3).UnixNano(),
-			expected: "3 weeks",
-			err:      nil,
-		}, {
-			name:     "months",
-			input:    time.Now().Add(0 - Month*3).UnixNano(),
-			expected: "3 months",
-			err:      nil,
-		}, {
-			name:     "years",
-			input:    time.Now().Add(0 - Year*3).UnixNano(),
-			expected: "3 years",
-			err:      nil,
-		}, {
-			name:     "invalid",
-			input:    time.Now().Add(Second).UnixNano(),
-			expected: "",
-			err:      errInvalid,
-		},
-	} {
-		output, err := FormatTimeInterval(tc.input)
-		assert.Equal(t, tc.err, err, tc.name)
-		assert.Equal(t, tc.expected, output, tc.name)
-	}
-
 }
 
 func TestMerge(t *testing.T) {
@@ -415,109 +319,6 @@ func TestCheckPidExist(t *testing.T) {
 	}
 }
 
-func TestGetTimestamp(t *testing.T) {
-	now := time.Now().In(time.UTC)
-
-	tCases := []struct {
-		val      string
-		expected string
-		hasError bool
-	}{
-		// relative time
-		{"1s", fmt.Sprintf("%d", now.Add(-1*time.Second).Unix()), false},
-		{"1m", fmt.Sprintf("%d", now.Add(-1*time.Minute).Unix()), false},
-		{"1.5h", fmt.Sprintf("%d", now.Add(-90*time.Minute).Unix()), false},
-		{"1h30m", fmt.Sprintf("%d", now.Add(-90*time.Minute).Unix()), false},
-
-		// time
-		{"2018-07-16T08:00:00.999999999+08:00", "1531699200.999999999", false},
-		{"2018-07-16T08:00:00.999999999+00:00", "1531728000.999999999", false},
-		{"2018-07-16T08:00:00.999999999-00:00", "1531728000.999999999", false},
-		{"2018-07-16T08:00:00.999999999Z", "1531728000.999999999", false},
-		{"2018-07-16T08:00:00.999999999", "1531728000.999999999", false},
-
-		{"2018-07-16T08:00:00", "1531728000.000000000", false},
-		{"2018-07-16T08:00:00Z", "1531728000.000000000", false},
-		{"2018-07-16T08:00:00+00:00", "1531728000.000000000", false},
-		{"2018-07-16T08:00:00-00:00", "1531728000.000000000", false},
-
-		{"2018-07-16T08:00", "1531728000.000000000", false},
-		{"2018-07-16T08:00Z", "1531728000.000000000", false},
-		{"2018-07-16T08:00+00:00", "1531728000.000000000", false},
-		{"2018-07-16T08:00-00:00", "1531728000.000000000", false},
-
-		{"2018-07-16T08", "1531728000.000000000", false},
-		{"2018-07-16T08Z", "1531728000.000000000", false},
-		{"2018-07-16T08+01:00", "1531724400.000000000", false},
-		{"2018-07-16T08-01:00", "1531731600.000000000", false},
-
-		{"2018-07-16", "1531699200.000000000", false},
-		{"2018-07-16Z", "1531699200.000000000", false},
-		{"2018-07-16+01:00", "1531695600.000000000", false},
-		{"2018-07-16-01:00", "1531702800.000000000", false},
-
-		// timestamp
-		{"0", "0", false},
-		{"12", "12", false},
-		{"12a", "12a", false},
-
-		// invalid input
-		{"-12", "", true},
-		{"2006-01-02T15:04:0Z", "", true},
-		{"2006-01-02T15:04:0", "", true},
-		{"2006-01-02T15:0Z", "", true},
-		{"2006-01-02T15:0", "", true},
-	}
-
-	for _, tc := range tCases {
-		got, err := GetUnixTimestamp(tc.val, now)
-		if err != nil && !tc.hasError {
-			t.Fatalf("unexpected error %v", err)
-		}
-
-		if err == nil && tc.hasError {
-			t.Fatal("expected error, but got nothing")
-		}
-
-		if got != tc.expected {
-			t.Errorf("expected %v, but got %v", tc.expected, got)
-		}
-	}
-}
-
-func TestParseTimestamp(t *testing.T) {
-	tCases := []struct {
-		val          string
-		defaultSec   int64
-		expectedSec  int64
-		expectedNano int64
-		hasError     bool
-	}{
-		{"20180510", 0, 20180510, 0, false},
-		{"20180510.000000001", 0, 20180510, 1, false},
-		{"20180510.0000000010", 0, 20180510, 1, false},
-		{"20180510.00000001", 0, 20180510, 10, false},
-		{"foo.bar", 0, 0, 0, true},
-		{"20180510.bar", 0, 0, 0, true},
-		{"", -1, -1, 0, false},
-	}
-
-	for _, tc := range tCases {
-		s, n, err := ParseTimestamp(tc.val, tc.defaultSec)
-		if err == nil && tc.hasError {
-			t.Fatal("expected error, but got nothing")
-		}
-
-		if err != nil && !tc.hasError {
-			t.Fatalf("unexpected error %v", err)
-		}
-
-		if s != tc.expectedSec || n != tc.expectedNano {
-			t.Fatalf("expected sec %v, nano %v, but got sec %v, nano %v", tc.expectedSec, tc.expectedNano, s, n)
-		}
-	}
-}
-
 func TestConvertKVStringsToMap(t *testing.T) {
 	type tCases struct {
 		input    []string
@@ -566,5 +367,159 @@ func TestConvertKVStringsToMap(t *testing.T) {
 		if !reflect.DeepEqual(got, tc.expected) {
 			t.Fatalf("[%d case] should have (%v), but got (%v)", idx, tc.expected, got)
 		}
+	}
+}
+
+func TestConvertKVStrToMapWithNoErr(t *testing.T) {
+	type args struct {
+		values []string
+	}
+	tests := []struct {
+		name string
+		args args
+		want map[string]string
+	}{
+		{
+			name: "normal case",
+			args: args{[]string{"a=b", "c=d"}},
+			want: map[string]string{"a": "b", "c": "d"},
+		},
+		{
+			name: "normal case with empty string",
+			args: args{[]string{"a=b", ""}},
+			want: map[string]string{"a": "b"},
+		},
+		{
+			name: "normal case with duplicated key but with different value",
+			args: args{[]string{"a=b", "a==bb"}},
+			want: map[string]string{"a": "=bb"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ConvertKVStrToMapWithNoErr(tt.args.values); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("ConvertKVStrToMapWithNoErr() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestConvertStrToKV(t *testing.T) {
+	type args struct {
+		input string
+	}
+	tests := []struct {
+		name    string
+		args    args
+		want    string
+		want1   string
+		wantErr bool
+	}{
+		{
+			name: "normal case",
+			args: args{
+				input: "a=b",
+			},
+			want:    "a",
+			want1:   "b",
+			wantErr: false,
+		},
+		{
+			name: "normal case",
+			args: args{
+				input: "a=b===",
+			},
+			want:    "a",
+			want1:   "b===",
+			wantErr: false,
+		},
+		{
+			name: "empty failure case",
+			args: args{
+				input: "",
+			},
+			want:    "",
+			want1:   "",
+			wantErr: true,
+		},
+		{
+			name: "no equal mark failure case",
+			args: args{
+				input: "asdfghjk",
+			},
+			want:    "",
+			want1:   "",
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, got1, err := ConvertStrToKV(tt.args.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ConvertStrToKV() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if got != tt.want {
+				t.Errorf("ConvertStrToKV() got = %v, want %v", got, tt.want)
+			}
+			if got1 != tt.want1 {
+				t.Errorf("ConvertStrToKV() got1 = %v, want %v", got1, tt.want1)
+			}
+		})
+	}
+}
+
+func TestIsFileExist(t *testing.T) {
+	assert := assert.New(t)
+	tempDir, err := ioutil.TempDir("/tmp", "")
+	assert.NoError(err)
+	defer os.RemoveAll(tempDir)
+	existPath := make([]string, 0)
+	for _, v := range []string{
+		"a", "b", "c", "d", "e",
+	} {
+		path := filepath.Join(tempDir, v)
+		existPath = append(existPath, path)
+		os.Create(path)
+	}
+
+	for _, t := range []struct {
+		path  string
+		exist bool
+	}{
+		{
+			path:  existPath[0],
+			exist: true,
+		},
+		{
+			path:  existPath[1],
+			exist: true,
+		},
+		{
+			path:  existPath[2],
+			exist: true,
+		},
+		{
+			path:  existPath[3],
+			exist: true,
+		},
+		{
+			path:  existPath[4],
+			exist: true,
+		},
+		{
+			path:  filepath.Join(tempDir, "foo"),
+			exist: false,
+		},
+		{
+			path:  filepath.Join(tempDir, "bar"),
+			exist: false,
+		},
+		{
+			path:  filepath.Join(tempDir, "foo/bar"),
+			exist: false,
+		},
+	} {
+		assert.Equal(IsFileExist(t.path), t.exist)
 	}
 }
