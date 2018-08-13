@@ -17,7 +17,6 @@ import (
 	"github.com/containerd/containerd/content"
 	"github.com/containerd/containerd/diff"
 	"github.com/containerd/containerd/errdefs"
-	"github.com/containerd/containerd/images"
 	"github.com/containerd/containerd/mount"
 	"github.com/containerd/containerd/plugin"
 	"github.com/containerd/containerd/rootfs"
@@ -394,45 +393,51 @@ func (t *task) Checkpoint(ctx context.Context, opts ...CheckpointTaskOpts) (Imag
 		return nil, err
 	}
 	defer t.Resume(ctx)
-	cr, err := t.client.ContainerService().Get(ctx, t.id)
-	if err != nil {
-		return nil, err
-	}
+	/*
+		cr, err := t.client.ContainerService().Get(ctx, t.id)
+		if err != nil {
+			return nil, err
+		}
+	*/
 	index := v1.Index{
 		Annotations: make(map[string]string),
 	}
 	if err := t.checkpointTask(ctx, &index, request); err != nil {
 		return nil, err
 	}
-	if cr.Image != "" {
-		if err := t.checkpointImage(ctx, &index, cr.Image); err != nil {
+	return &image{}, nil
+
+	/*
+		if cr.Image != "" {
+			if err := t.checkpointImage(ctx, &index, cr.Image); err != nil {
+				return nil, err
+			}
+			index.Annotations["image.name"] = cr.Image
+		}
+		if cr.SnapshotKey != "" {
+			if err := t.checkpointRWSnapshot(ctx, &index, cr.Snapshotter, cr.SnapshotKey); err != nil {
+				return nil, err
+			}
+		}
+		desc, err := t.writeIndex(ctx, &index)
+		if err != nil {
 			return nil, err
 		}
-		index.Annotations["image.name"] = cr.Image
-	}
-	if cr.SnapshotKey != "" {
-		if err := t.checkpointRWSnapshot(ctx, &index, cr.Snapshotter, cr.SnapshotKey); err != nil {
+		im := images.Image{
+			Name:   i.Name,
+			Target: desc,
+			Labels: map[string]string{
+				"containerd.io/checkpoint": "true",
+			},
+		}
+		if im, err = t.client.ImageService().Create(ctx, im); err != nil {
 			return nil, err
 		}
-	}
-	desc, err := t.writeIndex(ctx, &index)
-	if err != nil {
-		return nil, err
-	}
-	im := images.Image{
-		Name:   i.Name,
-		Target: desc,
-		Labels: map[string]string{
-			"containerd.io/checkpoint": "true",
-		},
-	}
-	if im, err = t.client.ImageService().Create(ctx, im); err != nil {
-		return nil, err
-	}
-	return &image{
-		client: t.client,
-		i:      im,
-	}, nil
+		return &image{
+			client: t.client,
+			i:      im,
+		}, nil
+	*/
 }
 
 // UpdateTaskInfo allows updated specific settings to be changed on a task
@@ -512,22 +517,24 @@ func (t *task) Metrics(ctx context.Context) (*types.Metric, error) {
 }
 
 func (t *task) checkpointTask(ctx context.Context, index *v1.Index, request *tasks.CheckpointTaskRequest) error {
-	response, err := t.client.TaskService().Checkpoint(ctx, request)
+	_, err := t.client.TaskService().Checkpoint(ctx, request)
 	if err != nil {
 		return errdefs.FromGRPC(err)
 	}
-	// add the checkpoint descriptors to the index
-	for _, d := range response.Descriptors {
-		index.Manifests = append(index.Manifests, v1.Descriptor{
-			MediaType: d.MediaType,
-			Size:      d.Size_,
-			Digest:    d.Digest,
-			Platform: &v1.Platform{
-				OS:           goruntime.GOOS,
-				Architecture: goruntime.GOARCH,
-			},
-		})
-	}
+	/*
+		// add the checkpoint descriptors to the index
+		for _, d := range response.Descriptors {
+			index.Manifests = append(index.Manifests, v1.Descriptor{
+				MediaType: d.MediaType,
+				Size:      d.Size_,
+				Digest:    d.Digest,
+				Platform: &v1.Platform{
+					OS:           goruntime.GOOS,
+					Architecture: goruntime.GOARCH,
+				},
+			})
+		}
+	*/
 	return nil
 }
 
