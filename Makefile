@@ -162,8 +162,10 @@ coverage: ## combine coverage after test
 
 
 .PHONY: plugin
-plugin: pre ## build hook plugin
-	@./hack/build plugin
+plugin: ## build hook plugin
+	GOOS=linux go build -buildmode=plugin \
+		-ldflags -pluginpath=plugins_`date +%s` \
+		-o hook_plugin.so github.com/alibaba/pouch/hook_plugin
 
 .PHONY: help
 help: ## this help
