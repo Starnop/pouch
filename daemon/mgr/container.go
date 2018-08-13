@@ -340,14 +340,6 @@ func (mgr *ContainerManager) Create(ctx context.Context, name string, config *ty
 		return nil, err
 	}
 
-	// set container basefs, basefs is not created in pouchd, it will created
-	// after create options passed to containerd.
-	mgr.setBaseFS(ctx, container, id)
-
-	if err := mgr.Mount(ctx, container); err != nil {
-		return nil, err
-	}
-
 	// parse volume config
 	if err := mgr.generateMountPoints(ctx, container); err != nil {
 		return nil, errors.Wrap(err, "failed to parse volume argument")
