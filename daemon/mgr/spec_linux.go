@@ -99,6 +99,7 @@ func setupSeccomp(ctx context.Context, c *Container, s *specs.Spec) error {
 		s.Linux.Seccomp = &specs.LinuxSeccomp{}
 	}
 
+	c.SeccompProfile = ProfileNameUnconfined
 	// TODO: check whether seccomp is enable in your kernel, if not, cannot run a custom seccomp prifle.
 	seccompProfile := c.SeccompProfile
 	switch seccompProfile {

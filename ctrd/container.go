@@ -686,8 +686,10 @@ func withCheckpointPath(path string) containerd.CheckpointTaskOpts {
 // use Digest as checkpoint path, since no other interface
 func withCheckpointOpt(checkpoint string) containerd.NewTaskOpts {
 	return func(_ context.Context, _ *containerd.Client, t *containerd.TaskInfo) error {
-		t.Checkpoint = &containerdtypes.Descriptor{
-			Digest: digest.Digest(checkpoint),
+		if checkpoint != "" {
+			t.Checkpoint = &containerdtypes.Descriptor{
+				Digest: digest.Digest(checkpoint),
+			}
 		}
 		return nil
 	}
