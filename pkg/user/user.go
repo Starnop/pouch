@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"github.com/opencontainers/runc/libcontainer/user"
-	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
 
@@ -55,7 +54,7 @@ func Get(passwdPath, groupPath, username string, groups []string) (uint32, uint3
 		passwdPath, groupPath, username, groups)
 
 	if passwdPath == "" || groupPath == "" {
-		return 0, 0, nil, errors.Errorf("invalid argument, passwd path or group path is nil")
+		logrus.Warn("get passwd file or group file is nil")
 	}
 
 	passwdFile, err := os.Open(passwdPath)

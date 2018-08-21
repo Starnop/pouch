@@ -389,26 +389,18 @@ func (c *Container) SetSnapshotterMeta(mounts []mount.Mount) {
 // GetSpecificBasePath accepts a given path, look for whether the path is exist
 // within container, if has, returns container base path like BaseFS, if not, return empty string
 func (c *Container) GetSpecificBasePath(path string) string {
-	// first try container BaseFS, it is a general view,
-	absPath := filepath.Join(c.BaseFS, path)
-	if c.BaseFS != "" && utils.IsFileExist(absPath) {
-		return absPath
-	}
-
-	// then try lower and upper directory, since overlay filesystem support only.
 	logrus.Debugf("GetSpecificBasePath, snapshotter data: (%v)", c.Snapshotter.Data)
-	for _, prefixPath := range c.Snapshotter.Data {
-		if prefixPath == "" {
-			continue
-		}
 
-		for _, p := range strings.Split(prefixPath, ":") {
-			absPath = filepath.Join(p, path)
-			if utils.IsFileExist(absPath) {
-				return absPath
+	// try lower and upper directory, since overlay filesystem support only.
+	for _, key := range []string{"MergedDir", "UpperDir", "LowerDir"} {
+		if prefixPath, ok := c.Snapshotter.Data[key]; ok && prefixPath != "" {
+			for _, p := range strings.Split(prefixPath, ":") {
+				absPath := filepath.Join(p, path)
+				if utils.IsFileExist(absPath) {
+					return absPath
+				}
 			}
 		}
-
 	}
 
 	return ""
