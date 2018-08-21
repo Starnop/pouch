@@ -8,7 +8,7 @@ other one is using daemon config file, and of course, you can use them simultane
 ## Support daemon flags
 
 We list some flags pouchd supports, for the detail flags explanations, you
-can find in [pouchd flags](https://github.com/alibaba/pouch/blob/master/docs/commandline/pouch.md).
+can find in [pouchd flags](https://github.com/alibaba/pouch/blob/master/docs/commandline/pouchd.md).
 
 | Flag                  | Description                             |
 |-----------------------|-----------------------------------------|
@@ -27,6 +27,23 @@ value of `--config-file`.
   line and config file simultaneously.
 * We allow users set slice or array type of flag simultaneously from command
   and config file line，and merge them.
+
+### Runtime format
+
+If user want to add more runtime into pouchd, add like:
+
+```
+{
+    "add-runtime": {
+        "runc": {
+            "path": "/usr/local/bin/runc",
+            "runtimeArgs": [
+                "--debug"
+            ]
+        }
+    }
+}
+```
 
 ### Steps to configure config file
 
