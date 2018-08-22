@@ -377,7 +377,7 @@ func getAddrByHostname() (net.IP, error) {
 			stdout, stderr, exit)
 	}
 
-	addr := net.ParseIP(stdout)
+	addr := net.ParseIP(strings.TrimSpace(stdout))
 	if addr == nil {
 		return nil, errors.Errorf("failed to get ip address, invalid format: (%s)", stdout)
 	}
