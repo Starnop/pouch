@@ -91,6 +91,9 @@ type CriMgr interface {
 	// ImageServiceServer is interface of CRI image service.
 	runtime.ImageServiceServer
 
+	// VolumeServiceServer is interface of CRI volume service.
+	runtime.VolumeServiceServer
+
 	// StreamServerStart starts the stream server of CRI.
 	StreamServerStart() error
 }
@@ -99,6 +102,7 @@ type CriMgr interface {
 type CriManager struct {
 	ContainerMgr mgr.ContainerMgr
 	ImageMgr     mgr.ImageMgr
+	VolumeMgr    mgr.VolumeMgr
 	CniMgr       cni.CniMgr
 
 	// StreamServer is the stream server of CRI serves container streaming request.
@@ -121,7 +125,7 @@ type CriManager struct {
 }
 
 // NewCriManager creates a brand new cri manager.
-func NewCriManager(config *config.Config, ctrMgr mgr.ContainerMgr, imgMgr mgr.ImageMgr) (CriMgr, error) {
+func NewCriManager(config *config.Config, ctrMgr mgr.ContainerMgr, imgMgr mgr.ImageMgr, volumeMgr mgr.VolumeMgr) (CriMgr, error) {
 	streamServer, err := newStreamServer(ctrMgr, streamServerAddress, streamServerPort)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create stream server for cri manager: %v", err)
@@ -130,6 +134,7 @@ func NewCriManager(config *config.Config, ctrMgr mgr.ContainerMgr, imgMgr mgr.Im
 	c := &CriManager{
 		ContainerMgr:   ctrMgr,
 		ImageMgr:       imgMgr,
+		VolumeMgr:      volumeMgr,
 		CniMgr:         cni.NewCniManager(&config.CriConfig),
 		StreamServer:   streamServer,
 		SandboxBaseDir: path.Join(config.HomeDir, "sandboxes"),
@@ -533,6 +538,7 @@ func (c *CriManager) CreateContainer(ctx context.Context, r *runtime.CreateConta
 			SpecAnnotation: specAnnotation,
 			NetPriority:    config.NetPriority,
 			DiskQuota:      resources.GetDiskQuota(),
+			QuotaID:        config.GetQuotaId(),
 		},
 		HostConfig: &apitypes.HostConfig{
 			Binds:     generateMountBindings(config.GetMounts()),
@@ -563,7 +569,10 @@ func (c *CriManager) CreateContainer(ctx context.Context, r *runtime.CreateConta
 	// Get container log.
 	if config.GetLogPath() != "" {
 		logPath := filepath.Join(sandboxConfig.GetLogDirectory(), config.GetLogPath())
-		err := c.attachLog(logPath, containerID)
+		// NOTE: If we attach log here, the IO of container will be created
+		// by this function first, so we should decide whether open the stdin
+		// here. It's weird actually, make it more elegant in the future.
+		err := c.attachLog(logPath, containerID, config.Stdin)
 		if err != nil {
 			return nil, err
 		}
@@ -667,6 +676,7 @@ func (c *CriManager) ContainerStatus(ctx context.Context, r *runtime.ContainerSt
 			HostPath:      m.Source,
 			ContainerPath: m.Destination,
 			Readonly:      !m.RW,
+			Name:          m.Name,
 			// Note: can't set SeLinuxRelabel.
 		})
 	}
@@ -761,6 +771,7 @@ func (c *CriManager) ContainerStatus(ctx context.Context, r *runtime.ContainerSt
 		LogPath:     logPath,
 		Volumes:     parseVolumesFromPouch(container.Config.Volumes),
 		Resources:   parseResourcesFromPouch(resources, diskQuota),
+		QuotaId:     container.Config.QuotaID,
 	}
 
 	return &runtime.ContainerStatusResponse{Status: status}, nil
@@ -1010,7 +1021,8 @@ func (c *CriManager) ListImages(ctx context.Context, r *runtime.ListImagesReques
 	return &runtime.ListImagesResponse{Images: images}, nil
 }
 
-// ImageStatus returns the status of the image, returns nil if the image isn't present.
+// ImageStatus returns the status of the image. If the image is not present,
+// returns a response with ImageStatusResponse.Image set to nil.
 func (c *CriManager) ImageStatus(ctx context.Context, r *runtime.ImageStatusRequest) (*runtime.ImageStatusResponse, error) {
 	imageRef := r.GetImage().GetImage()
 	ref, err := reference.Parse(imageRef)
@@ -1020,9 +1032,10 @@ func (c *CriManager) ImageStatus(ctx context.Context, r *runtime.ImageStatusRequ
 
 	imageInfo, err := c.ImageMgr.GetImage(ctx, ref.String())
 	if err != nil {
-		// TODO: separate ErrImageNotFound with others.
-		// Now we just return empty if the error occurred.
-		return &runtime.ImageStatusResponse{}, nil
+		if errtypes.IsNotfound(err) {
+			return &runtime.ImageStatusResponse{}, nil
+		}
+		return nil, err
 	}
 
 	image, err := imageToCriImage(imageInfo)
@@ -1066,8 +1079,7 @@ func (c *CriManager) RemoveImage(ctx context.Context, r *runtime.RemoveImageRequ
 
 	if err := c.ImageMgr.RemoveImage(ctx, imageRef, false); err != nil {
 		if errtypes.IsNotfound(err) {
-			// TODO: separate ErrImageNotFound with others.
-			// Now we just return empty if the error occurred.
+			// Now we just return empty if the ErrorNotFound occurred.
 			return &runtime.RemoveImageResponse{}, nil
 		}
 		return nil, err
@@ -1098,4 +1110,13 @@ func (c *CriManager) ImageFsInfo(ctx context.Context, r *runtime.ImageFsInfoRequ
 			},
 		},
 	}, nil
+}
+
+// RemoveVolume removes the volume.
+func (c *CriManager) RemoveVolume(ctx context.Context, r *runtime.RemoveVolumeRequest) (*runtime.RemoveVolumeResponse, error) {
+	volumeName := r.GetVolumeName()
+	if err := c.VolumeMgr.Remove(ctx, volumeName); err != nil {
+		return nil, err
+	}
+	return &runtime.RemoveVolumeResponse{}, nil
 }
