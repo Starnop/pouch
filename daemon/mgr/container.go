@@ -30,6 +30,7 @@ import (
 	"github.com/alibaba/pouch/storage/quota"
 	volumetypes "github.com/alibaba/pouch/storage/volume/types"
 
+	"github.com/containerd/cgroups"
 	containerdtypes "github.com/containerd/containerd/api/types"
 	"github.com/containerd/containerd/errdefs"
 	"github.com/containerd/containerd/mount"
@@ -76,8 +77,11 @@ type ContainerMgr interface {
 	// Unpause a container.
 	Unpause(ctx context.Context, name string) error
 
+	// Using a stream to get stats of a container.
+	StreamStats(ctx context.Context, name string, config *ContainerStatsConfig) error
+
 	// Stats of a container.
-	Stats(ctx context.Context, name string) (*containerdtypes.Metric, error)
+	Stats(ctx context.Context, name string) (*containerdtypes.Metric, *cgroups.Metrics, error)
 
 	// Attach a container.
 	Attach(ctx context.Context, name string, attach *AttachConfig) error
@@ -804,8 +808,20 @@ func (mgr *ContainerManager) Restart(ctx context.Context, name string, timeout i
 	}
 
 	logrus.Debugf("start container %s when restarting", c.ID)
+
+	//let restartCount++
+	restartCount := c.RestartCount + 1
+
 	// start container
-	return mgr.start(ctx, c, &types.ContainerStartOptions{})
+	err = mgr.start(ctx, c, &types.ContainerStartOptions{})
+	if err != nil {
+		return err
+	}
+
+	c.RestartCount = restartCount
+
+	logrus.Debugf("container %s restartCount is %d", c.ID, c.RestartCount)
+	return c.Write(mgr.Store)
 }
 
 // Pause pauses a running container.
@@ -858,23 +874,6 @@ func (mgr *ContainerManager) Unpause(ctx context.Context, name string) error {
 
 	mgr.LogContainerEvent(ctx, c, "unpause")
 	return nil
-}
-
-// Stats gets the stat of a container.
-func (mgr *ContainerManager) Stats(ctx context.Context, name string) (*containerdtypes.Metric, error) {
-	var (
-		err error
-		c   *Container
-	)
-
-	if c, err = mgr.container(name); err != nil {
-		return nil, err
-	}
-
-	c.Lock()
-	defer c.Unlock()
-
-	return mgr.Client.ContainerStats(ctx, c.ID)
 }
 
 // Attach attachs a container's io.

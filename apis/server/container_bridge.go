@@ -80,14 +80,15 @@ func (s *Server) getContainer(ctx context.Context, rw http.ResponseWriter, req *
 	}
 
 	container := types.ContainerJSON{
-		ID:          c.ID,
-		Name:        c.Name,
-		Image:       c.Config.Image,
-		Created:     c.Created,
-		State:       c.State,
-		Config:      c.Config,
-		HostConfig:  c.HostConfig,
-		Snapshotter: c.Snapshotter,
+		ID:           c.ID,
+		Name:         c.Name,
+		Image:        c.Config.Image,
+		Created:      c.Created,
+		State:        c.State,
+		Config:       c.Config,
+		HostConfig:   c.HostConfig,
+		Snapshotter:  c.Snapshotter,
+		RestartCount: c.RestartCount,
 		GraphDriver: &types.GraphDriverData{
 			Name: c.Snapshotter.Name,
 			Data: c.Snapshotter.Data,
@@ -383,6 +384,27 @@ func (s *Server) logsContainer(ctx context.Context, rw http.ResponseWriter, req 
 
 	writeLogStream(ctx, rw, tty, opts, msgCh)
 	return nil
+}
+
+func (s *Server) statsContainer(ctx context.Context, rw http.ResponseWriter, req *http.Request) error {
+	name := mux.Vars(req)["name"]
+
+	var stream bool
+	if _, ok := req.Form["stream"]; !ok {
+		stream = true
+	}
+	stream = httputils.BoolValue(req, "stream")
+
+	if !stream {
+		rw.Header().Set("Content-Type", "application/json")
+	}
+
+	config := &mgr.ContainerStatsConfig{
+		Stream:    stream,
+		OutStream: rw,
+	}
+
+	return s.ContainerMgr.StreamStats(ctx, name, config)
 }
 
 func (s *Server) resizeContainer(ctx context.Context, rw http.ResponseWriter, req *http.Request) error {

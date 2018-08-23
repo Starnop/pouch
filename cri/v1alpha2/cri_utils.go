@@ -16,6 +16,7 @@ import (
 	anno "github.com/alibaba/pouch/cri/annotations"
 	runtime "github.com/alibaba/pouch/cri/apis/v1alpha2"
 	"github.com/alibaba/pouch/daemon/mgr"
+	"github.com/alibaba/pouch/pkg/errtypes"
 	"github.com/alibaba/pouch/pkg/utils"
 
 	"github.com/containerd/cgroups"
@@ -822,17 +823,18 @@ func imageToCriImage(image *apitypes.ImageInfo) (*runtime.Image, error) {
 // ensureSandboxImageExists pulls the image when it's not present.
 func (c *CriManager) ensureSandboxImageExists(ctx context.Context, imageRef string) error {
 	_, _, _, err := c.ImageMgr.CheckReference(ctx, imageRef)
-	// TODO: maybe we should distinguish NotFound error with others.
 	if err == nil {
 		return nil
 	}
-
-	err = c.ImageMgr.PullImage(ctx, imageRef, nil, bytes.NewBuffer([]byte{}))
-	if err != nil {
-		return fmt.Errorf("pull sandbox image %q failed: %v", imageRef, err)
+	if errtypes.IsNotfound(err) {
+		err = c.ImageMgr.PullImage(ctx, imageRef, nil, bytes.NewBuffer([]byte{}))
+		if err != nil {
+			return fmt.Errorf("failed to pull sandbox image %q: %v", imageRef, err)
+		}
+		return nil
 	}
 
-	return nil
+	return fmt.Errorf("failed to check sandbox image %q: %v", imageRef, err)
 }
 
 // getUserFromImageUser gets uid or user name of the image user.
@@ -866,13 +868,14 @@ func parseUserFromImageUser(id string) string {
 	return id
 }
 
-func (c *CriManager) attachLog(logPath string, containerID string) error {
+func (c *CriManager) attachLog(logPath string, containerID string, openStdin bool) error {
 	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0640)
 	if err != nil {
 		return fmt.Errorf("failed to create container for opening log file failed: %v", err)
 	}
 	// Attach to the container to get log.
 	attachConfig := &mgr.AttachConfig{
+		Stdin:      openStdin,
 		Stdout:     true,
 		Stderr:     true,
 		CriLogFile: f,
@@ -887,7 +890,7 @@ func (c *CriManager) attachLog(logPath string, containerID string) error {
 func (c *CriManager) getContainerMetrics(ctx context.Context, meta *mgr.Container) (*runtime.ContainerStats, error) {
 	var usedBytes, inodesUsed uint64
 
-	stats, err := c.ContainerMgr.Stats(ctx, meta.ID)
+	stats, _, err := c.ContainerMgr.Stats(ctx, meta.ID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get stats of container %q: %v", meta.ID, err)
 	}
