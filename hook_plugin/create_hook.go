@@ -1,11 +1,7 @@
 package main
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
-	"io"
-	"io/ioutil"
 	"net"
 	"os/exec"
 	"strconv"
@@ -26,19 +22,9 @@ import (
 // 8. in rich container mode, set ShmSize to half of the limit of memory
 // 9. set HOSTNAME env if HostName specified
 // 10. if VolumesFrom specifed and the container name has a prefix of slash, trim it
-func (c ContPlugin) PreCreate(in io.ReadCloser) (io.ReadCloser, error) {
+func (c ContPlugin) PreCreate(createConfig *ContainerCreateConfig) error {
 	logrus.Infof("pre create method called")
-	inputBuffer, err := ioutil.ReadAll(in)
-	if err != nil {
-		return nil, err
-	}
-	logrus.Infof("create container with body %s", string(inputBuffer))
 
-	var createConfig ContainerCreateConfig
-	err = json.NewDecoder(bytes.NewReader(inputBuffer)).Decode(&createConfig)
-	if err != nil {
-		return nil, err
-	}
 	if createConfig.HostConfig == nil {
 		createConfig.HostConfig = &HostConfig{}
 	}
@@ -47,9 +33,6 @@ func (c ContPlugin) PreCreate(in io.ReadCloser) (io.ReadCloser, error) {
 		createConfig.HostConfig.NetworkMode = "bridge"
 	}
 	networkMode := createConfig.HostConfig.NetworkMode
-	if err != nil {
-		return nil, err
-	}
 	env := createConfig.Env
 
 	//setup network just in case
@@ -67,18 +50,18 @@ func (c ContPlugin) PreCreate(in io.ReadCloser) (io.ReadCloser, error) {
 
 		if nwName, e := prepareNetwork(requestedIP, defaultRoute, mask, nic, networkMode,
 			createConfig.NetworkingConfig.EndpointsConfig, env); e != nil {
-			return nil, e
+			return e
 		} else if nwName != networkMode {
 			createConfig.HostConfig.NetworkMode = nwName
 		}
 
 		if mustRequestedIP() {
 			if len(requestedIP) == 0 {
-				return nil, fmt.Errorf("-e RequestedIP not set")
+				return fmt.Errorf("-e RequestedIP not set")
 			}
 			for _, oneIp := range strings.Split(requestedIP, ",") {
 				if net.ParseIP(oneIp) == nil {
-					return nil, fmt.Errorf("-e RequestedIP=%s is invalid", requestedIP)
+					return fmt.Errorf("-e RequestedIP=%s is invalid", requestedIP)
 				}
 			}
 		}
@@ -89,11 +72,11 @@ func (c ContPlugin) PreCreate(in io.ReadCloser) (io.ReadCloser, error) {
 		if b, ex := exec.Command("/opt/ali-iaas/pouch/bin/get_admin_uid.sh",
 			requestedIP).CombinedOutput(); ex != nil {
 			logrus.Errorf("get admin uid error, ip is %s, error is %v", requestedIP, ex)
-			return nil, ex
+			return ex
 		} else {
 			if uid, ex := strconv.Atoi(strings.TrimSpace(string(b))); ex != nil {
 				logrus.Errorf("get admin uid error, ip is %s, error is %v", requestedIP, ex)
-				return nil, ex
+				return ex
 			} else {
 				for i, oneEnv := range createConfig.Env {
 					arr := strings.SplitN(oneEnv, "=", 2)
@@ -214,11 +197,5 @@ func (c ContPlugin) PreCreate(in io.ReadCloser) (io.ReadCloser, error) {
 		}
 		createConfig.SpecAnnotation["net-priority"] = strconv.FormatInt(createConfig.NetPriority, 10)
 	}
-
-	// marshal it as stream and return to the caller
-	var out bytes.Buffer
-	err = json.NewEncoder(&out).Encode(createConfig)
-	logrus.Infof("after process create container body is %s", string(out.Bytes()))
-
-	return ioutil.NopCloser(&out), err
+	return nil
 }

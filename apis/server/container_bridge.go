@@ -24,13 +24,6 @@ import (
 func (s *Server) createContainer(ctx context.Context, rw http.ResponseWriter, req *http.Request) error {
 	config := &types.ContainerCreateConfig{}
 	reader := req.Body
-	var ex error
-	if s.ContainerPlugin != nil {
-		logrus.Infof("invoke container pre-create hook in plugin")
-		if reader, ex = s.ContainerPlugin.PreCreate(req.Body); ex != nil {
-			return errors.Wrapf(ex, "pre-create plugin point execute failed")
-		}
-	}
 	// decode request body
 	if err := json.NewDecoder(reader).Decode(config); err != nil {
 		return httputils.NewHTTPError(err, http.StatusBadRequest)
@@ -97,7 +90,6 @@ func (s *Server) getContainer(ctx context.Context, rw http.ResponseWriter, req *
 		NetworkSettings: c.NetworkSettings,
 	}
 
-
 	if utils.IsStale(ctx, req) {
 		container.Name = fmt.Sprintf("/%s", container.Name)
 	}
@@ -131,7 +123,7 @@ func (s *Server) getContainers(ctx context.Context, rw http.ResponseWriter, req 
 				for _, oneId := range m["id"] {
 					idSet[oneId] = struct{}{}
 				}
-				for i:=len(cons)-1; i>=0; i-- {
+				for i := len(cons) - 1; i >= 0; i-- {
 					if _, ok := idSet[cons[i].ID]; !ok {
 						cons = append(cons[:i], cons[i+1:]...)
 					}
