@@ -949,13 +949,13 @@ func (mgr *ContainerManager) Update(ctx context.Context, name string, config *ty
 	}
 
 	restore := false
-	configBack := *c.Config
-	hostconfigBack := *c.HostConfig
+	oldConfig := *c.Config
+	oldHostconfig := *c.HostConfig
 	defer func() {
 		if restore {
 			c.Lock()
-			c.Config = &configBack
-			c.HostConfig = &hostconfigBack
+			c.Config = &oldConfig
+			c.HostConfig = &oldHostconfig
 			c.Unlock()
 		}
 	}()
@@ -993,20 +993,6 @@ func (mgr *ContainerManager) Update(ctx context.Context, name string, config *ty
 			}
 		}
 	}
-
-	// TODO(ziren): we should use meta.Config.DiskQuota to record container diskquota
-	// compatibility with alidocker, when set DiskQuota for container
-	// add a DiskQuota label
-	if config.DiskQuota != nil {
-		if _, ok := c.Config.Labels["DiskQuota"]; ok {
-			labels := []string{}
-			for dir, quota := range c.Config.DiskQuota {
-				labels = append(labels, fmt.Sprintf("%s=%s", dir, quota))
-			}
-			c.Config.Labels["DiskQuota"] = strings.Join(labels, ";")
-		}
-	}
-
 	c.Unlock()
 
 	// update Resources of a container.
