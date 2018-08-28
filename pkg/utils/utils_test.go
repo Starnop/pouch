@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -541,6 +542,36 @@ func TestStringSliceEqual(t *testing.T) {
 		result := StringSliceEqual(test.s1, test.s2)
 		if result != test.equal {
 			t.Fatalf("StringSliceEqual(%v, %v) expected: %v, but got %v", test.s1, test.s2, test.equal, result)
+		}
+	}
+}
+
+func TestUniqueStringSlice(t *testing.T) {
+	cases := []struct {
+		input    []string
+		expected []string
+	}{
+		{
+			input:    []string{},
+			expected: []string{},
+		}, {
+			input:    []string{"1"},
+			expected: []string{"1"},
+		}, {
+			input:    []string{"3", "1", "2", "1", "2"},
+			expected: []string{"1", "2", "3"},
+		}, {
+			input:    []string{"3", "1", "2"},
+			expected: []string{"1", "2", "3"},
+		},
+	}
+
+	for _, tc := range cases {
+		got := UniqueStringSlice(tc.input)
+		sort.Strings(got)
+		sort.Strings(tc.expected)
+		if !reflect.DeepEqual(got, tc.expected) {
+			t.Fatalf("expected %v, but got %v", tc.expected, got)
 		}
 	}
 }
