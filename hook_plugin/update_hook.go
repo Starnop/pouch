@@ -12,6 +12,7 @@ import (
 
 	"github.com/alibaba/pouch/apis/opts"
 	"github.com/alibaba/pouch/apis/types"
+	"github.com/alibaba/pouch/pkg/utils"
 
 	"github.com/magiconair/properties"
 	"github.com/pkg/errors"
@@ -46,6 +47,12 @@ func (c ContPlugin) PreUpdate(in io.ReadCloser) (io.ReadCloser, error) {
 
 	var diskQuota map[string]string
 	if updateConfigInternal.DiskQuota != "" {
+		// Notes: compatible with alidocker, if DiskQuota is not empty,
+		// should also update the DiskQuota Label
+		if !utils.StringInSlice(updateConfigInternal.Label, updateConfigInternal.DiskQuota) {
+			updateConfigInternal.Label = append(updateConfigInternal.Label, updateConfigInternal.DiskQuota)
+		}
+
 		diskQuota, err = opts.ParseDiskQuota(strings.Split(updateConfigInternal.DiskQuota, ";"))
 		if err != nil {
 			logrus.Errorf("failed to parse update diskquota: %s, err: %v", updateConfigInternal.DiskQuota, err)
@@ -54,11 +61,11 @@ func (c ContPlugin) PreUpdate(in io.ReadCloser) (io.ReadCloser, error) {
 	}
 
 	updateConfig := types.UpdateConfig{
-		Resources: updateConfigInternal.Resources,
-		DiskQuota: diskQuota,
-		Env:updateConfigInternal.Env,
-		Label:updateConfigInternal.Label,
-		RestartPolicy:&updateConfigInternal.RestartPolicy,
+		Resources:     updateConfigInternal.Resources,
+		DiskQuota:     diskQuota,
+		Env:           updateConfigInternal.Env,
+		Label:         updateConfigInternal.Label,
+		RestartPolicy: &updateConfigInternal.RestartPolicy,
 	}
 
 	// marshal it as stream and return to the caller
