@@ -330,3 +330,17 @@ func StringSliceEqual(s1, s2 []string) bool {
 
 	return true
 }
+
+// UniqueStringSlice removes the duplicate items.
+func UniqueStringSlice(s []string) []string {
+	h := make(map[string]struct{})
+	for i := range s {
+		h[s[i]] = struct{}{}
+	}
+
+	res := make([]string, 0, len(h))
+	for key := range h {
+		res = append(res, key)
+	}
+	return res
+}

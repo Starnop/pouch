@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	. "github.com/alibaba/pouch/apis/types"
+	"github.com/alibaba/pouch/pkg/utils"
 	"github.com/sirupsen/logrus"
 )
 
@@ -145,6 +146,8 @@ func (c ContPlugin) PreCreate(createConfig *ContainerCreateConfig) error {
 
 		createConfig.HostConfig.CapAdd = append(createConfig.HostConfig.CapAdd, "SYS_RESOURCE", "SYS_MODULE",
 			"SYS_PTRACE", "SYS_PACCT", "NET_ADMIN", "SYS_ADMIN")
+
+		createConfig.HostConfig.CapAdd = utils.UniqueStringSlice(createConfig.HostConfig.CapAdd)
 
 		//don't bind /etc/hosts /etc/hostname /etc/resolv.conf files into container
 		createConfig.DisableNetworkFiles = true
