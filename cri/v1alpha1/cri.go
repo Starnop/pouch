@@ -276,7 +276,9 @@ func (c *CriManager) RunPodSandbox(ctx context.Context, r *runtime.RunPodSandbox
 		NetNSPath: netnsPath,
 		Runtime:   config.Annotations[anno.KubernetesRuntime],
 	}
-	c.SandboxStore.Put(sandboxMeta)
+	if err := c.SandboxStore.Put(sandboxMeta); err != nil {
+		return nil, err
+	}
 
 	return &runtime.RunPodSandboxResponse{PodSandboxId: id}, nil
 }
@@ -543,12 +545,23 @@ func (c *CriManager) CreateContainer(ctx context.Context, r *runtime.CreateConta
 
 	containerName := makeContainerName(sandboxConfig, config)
 
-	createResp, err := c.ContainerMgr.Create(ctx, containerName, createConfig)
-	if err != nil {
+	var createErr error
+	createResp, createErr := c.ContainerMgr.Create(ctx, containerName, createConfig)
+	if createErr != nil {
 		return nil, fmt.Errorf("failed to create container for sandbox %q: %v", podSandboxID, err)
 	}
 
 	containerID := createResp.ID
+
+	defer func() {
+		// If the container failed to be created, clean up the container.
+		if createErr != nil {
+			err := c.ContainerMgr.Remove(ctx, containerID, &apitypes.ContainerRemoveOptions{Volumes: true, Force: true})
+			if err != nil {
+				logrus.Errorf("failed to remove the container when creating container failed: %v", err)
+			}
+		}
+	}()
 
 	// Get container log.
 	if config.GetLogPath() != "" {
@@ -619,7 +632,7 @@ func (c *CriManager) ListContainers(ctx context.Context, r *runtime.ListContaine
 	for _, c := range containerList {
 		container, err := toCriContainer(c)
 		if err != nil {
-			// TODO: log an error message?
+			logrus.Warnf("failed to translate container %v to cri container in ListContainers: %v", c.ID, err)
 			continue
 		}
 		containers = append(containers, container)
