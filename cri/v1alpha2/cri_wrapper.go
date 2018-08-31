@@ -20,24 +20,22 @@ func NewCriWrapper(c *CriManager) *CriWrapper {
 // StreamServerStart starts the stream server of CRI.
 func (c *CriWrapper) StreamServerStart() (err error) {
 	logrus.Infof("StreamServerStart starts stream server of cri manager")
-	defer func() {
-		if err != nil {
-			logrus.Errorf("StreamServerStart failed: %v", err)
-		} else {
-			logrus.Infof("StreamServerStart has started stream server of cri manager")
-		}
-	}()
+	if err != nil {
+		logrus.Errorf("failed to start StreamServer: %v", err)
+	} else {
+		logrus.Infof("success to start StreamServer of cri manager")
+	}
 	return c.CriManager.StreamServerStart()
 }
 
 // Version returns the runtime name, runtime version and runtime API version.
 func (c *CriWrapper) Version(ctx context.Context, r *runtime.VersionRequest) (res *runtime.VersionResponse, err error) {
-	logrus.Infof("Version shows the basic information of cri Manager")
+	logrus.Debugf("Version shows the basic information of cri Manager")
 	defer func() {
 		if err != nil {
-			logrus.Errorf("Version failed: %v", err)
+			logrus.Errorf("failed to get version: %v", err)
 		} else {
-			logrus.Infof("Version has operated successfully")
+			logrus.Debugf("success to get version")
 		}
 	}()
 	return c.CriManager.Version(ctx, r)
@@ -50,9 +48,9 @@ func (c *CriWrapper) RunPodSandbox(ctx context.Context, r *runtime.RunPodSandbox
 	logrus.Infof("RunPodSandbox with config %+v", r.GetConfig())
 	defer func() {
 		if err != nil {
-			logrus.Errorf("RunPodSandbox for %+v failed, error: %v", r.GetConfig().GetMetadata(), err)
+			logrus.Errorf("failed to run PodSandbox: %+v, %v", r.GetConfig().GetMetadata(), err)
 		} else {
-			logrus.Infof("RunPodSandbox for %+v returns sandbox id %q", r.GetConfig().GetMetadata(), res.GetPodSandboxId())
+			logrus.Infof("success to run PodSandbox: %+v, return sandbox id: %q", r.GetConfig().GetMetadata(), res.GetPodSandboxId())
 		}
 	}()
 	return c.CriManager.RunPodSandbox(ctx, r)
@@ -64,9 +62,9 @@ func (c *CriWrapper) StopPodSandbox(ctx context.Context, r *runtime.StopPodSandb
 	logrus.Infof("StopPodSandbox for %q", r.GetPodSandboxId())
 	defer func() {
 		if err != nil {
-			logrus.Errorf("StopPodSandbox for %q failed, error: %v", r.GetPodSandboxId(), err)
+			logrus.Errorf("failed to stop PodSandbox: %q, %v", r.GetPodSandboxId(), err)
 		} else {
-			logrus.Infof("StopPodSandbox for %q returns successfully", r.GetPodSandboxId())
+			logrus.Infof("success to stop PodSandbox: %q", r.GetPodSandboxId())
 		}
 	}()
 	return c.CriManager.StopPodSandbox(ctx, r)
@@ -78,9 +76,9 @@ func (c *CriWrapper) RemovePodSandbox(ctx context.Context, r *runtime.RemovePodS
 	logrus.Infof("RemovePodSandbox for %q", r.GetPodSandboxId())
 	defer func() {
 		if err != nil {
-			logrus.Errorf("RemovePodSandbox for %q failed, error: %v", r.GetPodSandboxId(), err)
+			logrus.Errorf("failed to remove PodSandbox: %q, %v", r.GetPodSandboxId(), err)
 		} else {
-			logrus.Infof("RemovePodSandbox %q returns successfully", r.GetPodSandboxId())
+			logrus.Infof("success to remove PodSandbox: %q", r.GetPodSandboxId())
 		}
 	}()
 	return c.CriManager.RemovePodSandbox(ctx, r)
@@ -91,9 +89,9 @@ func (c *CriWrapper) PodSandboxStatus(ctx context.Context, r *runtime.PodSandbox
 	logrus.Infof("PodSandboxStatus for %q", r.GetPodSandboxId())
 	defer func() {
 		if err != nil {
-			logrus.Errorf("PodSandboxStatus for %q failed, error: %v", r.GetPodSandboxId(), err)
+			logrus.Errorf("failed to get PodSandboxStatus: %q, %v", r.GetPodSandboxId(), err)
 		} else {
-			logrus.Infof("PodSandboxStatus for %q returns status %+v", r.GetPodSandboxId(), res.GetStatus())
+			logrus.Infof("success to get PodSandboxStatus: %q, %+v", r.GetPodSandboxId(), res.GetStatus())
 		}
 	}()
 	return c.CriManager.PodSandboxStatus(ctx, r)
@@ -101,13 +99,13 @@ func (c *CriWrapper) PodSandboxStatus(ctx context.Context, r *runtime.PodSandbox
 
 // ListPodSandbox returns a list of Sandbox.
 func (c *CriWrapper) ListPodSandbox(ctx context.Context, r *runtime.ListPodSandboxRequest) (res *runtime.ListPodSandboxResponse, err error) {
-	logrus.Infof("ListPodSandbox with filter %+v", r.GetFilter())
+	logrus.Debugf("ListPodSandbox with filter %+v", r.GetFilter())
 	defer func() {
 		if err != nil {
-			logrus.Errorf("ListPodSandbox failed, error: %v", err)
+			logrus.Errorf("failed to ListPodSandbox: %v", err)
 		} else {
 			// NOTE: maybe log detailed sandbox items with higher log level.
-			logrus.Infof("ListPodSandbox returns sandboxes list successfully")
+			logrus.Debugf("success to ListPodSandbox: %+v", res.Items)
 		}
 	}()
 	return c.CriManager.ListPodSandbox(ctx, r)
@@ -120,10 +118,10 @@ func (c *CriWrapper) CreateContainer(ctx context.Context, r *runtime.CreateConta
 		r.GetPodSandboxId(), r.GetConfig(), r.GetSandboxConfig())
 	defer func() {
 		if err != nil {
-			logrus.Errorf("CreateContainer within sandbox %q for %+v failed, error: %v",
+			logrus.Errorf("failed to create container within sandbox %q with container config %+v: %v",
 				r.GetPodSandboxId(), r.GetConfig().GetMetadata(), err)
 		} else {
-			logrus.Infof("CreateContainer within sandbox %q for %+v returns container id %q",
+			logrus.Infof("success to create container within sandbox %q with container config %+v, return container id %q",
 				r.GetPodSandboxId(), r.GetConfig().GetMetadata(), res.GetContainerId())
 		}
 	}()
@@ -135,9 +133,9 @@ func (c *CriWrapper) StartContainer(ctx context.Context, r *runtime.StartContain
 	logrus.Infof("StartContainer for %q", r.GetContainerId())
 	defer func() {
 		if err != nil {
-			logrus.Errorf("StartContainer for %q failed, error: %v", r.GetContainerId(), err)
+			logrus.Errorf("failed to start container: %q, %v", r.GetContainerId(), err)
 		} else {
-			logrus.Infof("StartContainer for %q returns successfully", r.GetContainerId())
+			logrus.Infof("success to start container: %q", r.GetContainerId())
 		}
 	}()
 	return c.CriManager.StartContainer(ctx, r)
@@ -148,9 +146,9 @@ func (c *CriWrapper) StopContainer(ctx context.Context, r *runtime.StopContainer
 	logrus.Infof("StopContainer for %q with timeout %d (s)", r.GetContainerId(), r.GetTimeout())
 	defer func() {
 		if err != nil {
-			logrus.Errorf("StopContainer for %q failed, error: %v", r.GetContainerId(), err)
+			logrus.Errorf("failed to stop container: %q, %v", r.GetContainerId(), err)
 		} else {
-			logrus.Infof("StopContainer for %q returns successfully", r.GetContainerId())
+			logrus.Infof("success to stop container: %q", r.GetContainerId())
 		}
 	}()
 	return c.CriManager.StopContainer(ctx, r)
@@ -161,9 +159,9 @@ func (c *CriWrapper) RemoveContainer(ctx context.Context, r *runtime.RemoveConta
 	logrus.Infof("RemoveContainer for %q", r.GetContainerId())
 	defer func() {
 		if err != nil {
-			logrus.Errorf("RemoveContainer for %q failed, error: %v", r.GetContainerId(), err)
+			logrus.Errorf("failed to remove container: %q, %v", r.GetContainerId(), err)
 		} else {
-			logrus.Infof("RemoveContainer for %q returns successfully", r.GetContainerId())
+			logrus.Infof("success to remove container: %q", r.GetContainerId())
 		}
 	}()
 	return c.CriManager.RemoveContainer(ctx, r)
@@ -171,13 +169,13 @@ func (c *CriWrapper) RemoveContainer(ctx context.Context, r *runtime.RemoveConta
 
 // ListContainers lists all containers matching the filter.
 func (c *CriWrapper) ListContainers(ctx context.Context, r *runtime.ListContainersRequest) (res *runtime.ListContainersResponse, err error) {
-	logrus.Infof("ListContainers with filter %+v", r.GetFilter())
+	logrus.Debugf("ListContainers with filter %+v", r.GetFilter())
 	defer func() {
 		if err != nil {
-			logrus.Errorf("ListContainers with filter %+v failed, error: %v", r.GetFilter(), err)
+			logrus.Errorf("failed to list containers with filter %+v: %v", r.GetFilter(), err)
 		} else {
 			// NOTE: maybe log detailed container items with higher log level.
-			logrus.Infof("ListContainers with filter %+v returns container list successfully", r.GetFilter())
+			logrus.Debugf("success to list containers with filter: %+v", r.GetFilter())
 		}
 	}()
 	return c.CriManager.ListContainers(ctx, r)
@@ -188,9 +186,9 @@ func (c *CriWrapper) ContainerStatus(ctx context.Context, r *runtime.ContainerSt
 	logrus.Infof("ContainerStatus for %q", r.GetContainerId())
 	defer func() {
 		if err != nil {
-			logrus.Errorf("ContainerStatus for %q failed, error: %v", r.GetContainerId(), err)
+			logrus.Warnf("failed to get ContainerStatus: %q, %v", r.GetContainerId(), err)
 		} else {
-			logrus.Infof("ContainerStatus for %q returns status %+v", r.GetContainerId(), res.GetStatus())
+			logrus.Infof("success to get ContainerStatus: %q, %+v", r.GetContainerId(), res.GetStatus())
 		}
 	}()
 	return c.CriManager.ContainerStatus(ctx, r)
@@ -202,9 +200,9 @@ func (c *CriWrapper) ContainerStats(ctx context.Context, r *runtime.ContainerSta
 	logrus.Infof("ContainerStats for %q", r.GetContainerId())
 	defer func() {
 		if err != nil {
-			logrus.Errorf("ContainerStats for %q failed, error: %v", r.GetContainerId(), err)
+			logrus.Errorf("failed to get ContainerStats: %q, %v", r.GetContainerId(), err)
 		} else {
-			logrus.Infof("ContainerStats for %q returns stats %+v", r.GetContainerId(), res.GetStats())
+			logrus.Infof("success to get ContainerStats: %q, %+v", r.GetContainerId(), res.GetStats())
 		}
 	}()
 	return c.CriManager.ContainerStats(ctx, r)
@@ -212,12 +210,12 @@ func (c *CriWrapper) ContainerStats(ctx context.Context, r *runtime.ContainerSta
 
 // ListContainerStats returns stats of all running containers.
 func (c *CriWrapper) ListContainerStats(ctx context.Context, r *runtime.ListContainerStatsRequest) (res *runtime.ListContainerStatsResponse, err error) {
-	logrus.Infof("ListContainerStats with filter %+v", r.GetFilter())
+	logrus.Debugf("ListContainerStats with filter %+v", r.GetFilter())
 	defer func() {
 		if err != nil {
-			logrus.Errorf("ListContainerStats failed, error: %v", err)
+			logrus.Errorf("failed to get ListContainerStats: %v", err)
 		} else {
-			logrus.Infof("ListContainerStats returns stats %+v", res.GetStats())
+			logrus.Debugf("success to get ListContainerStats: %+v", res.GetStats())
 		}
 	}()
 	return c.CriManager.ListContainerStats(ctx, r)
@@ -228,9 +226,9 @@ func (c *CriWrapper) UpdateContainerResources(ctx context.Context, r *runtime.Up
 	logrus.Infof("UpdateContainerResources for %q with %+v", r.GetContainerId(), r.GetLinux())
 	defer func() {
 		if err != nil {
-			logrus.Errorf("UpdateContainerResources for %q failed", r.GetContainerId())
+			logrus.Errorf("failed to update ContainerResources: %q", r.GetContainerId())
 		} else {
-			logrus.Infof("UpdateContainerResources for %q returns successfully", r.GetContainerId())
+			logrus.Infof("success to update ContainerResources: %q", r.GetContainerId())
 		}
 	}()
 	return c.CriManager.UpdateContainerResources(ctx, r)
@@ -245,9 +243,9 @@ func (c *CriWrapper) ReopenContainerLog(ctx context.Context, r *runtime.ReopenCo
 	logrus.Infof("ReopenContainerLog for %q", r.GetContainerId())
 	defer func() {
 		if err != nil {
-			logrus.Errorf("ReopenContainerLog for %q failed", r.GetContainerId())
+			logrus.Errorf("failed to ReopenContainerLog: %q", r.GetContainerId())
 		} else {
-			logrus.Infof("ReopenContainerLog for %q returns successfully", r.GetContainerId())
+			logrus.Infof("success to ReopenContainerLog: %q", r.GetContainerId())
 		}
 	}()
 	return c.CriManager.ReopenContainerLog(ctx, r)
@@ -259,9 +257,9 @@ func (c *CriWrapper) ExecSync(ctx context.Context, r *runtime.ExecSyncRequest) (
 	logrus.Infof("ExecSync for %q with command %+v and timeout %d (s)", r.GetContainerId(), r.GetCmd(), r.GetTimeout())
 	defer func() {
 		if err != nil {
-			logrus.Errorf("ExecSync for %q failed, error: %v", r.GetContainerId(), err)
+			logrus.Errorf("failed to ExecSync: %q, %v", r.GetContainerId(), err)
 		} else {
-			logrus.Infof("ExecSync for %q returns with exit code %d", r.GetContainerId(), res.GetExitCode())
+			logrus.Infof("success to ExecSync %q, return with exit code %d", r.GetContainerId(), res.GetExitCode())
 		}
 	}()
 	return c.CriManager.ExecSync(ctx, r)
@@ -273,9 +271,9 @@ func (c *CriWrapper) Exec(ctx context.Context, r *runtime.ExecRequest) (res *run
 		r.GetContainerId(), r.GetCmd(), r.GetTty(), r.GetStdin())
 	defer func() {
 		if err != nil {
-			logrus.Errorf("Exec for %q failed, error: %v", r.GetContainerId(), err)
+			logrus.Errorf("failed to Exec %q, %v", r.GetContainerId(), err)
 		} else {
-			logrus.Infof("Exec for %q returns URL %q", r.GetContainerId(), res.GetUrl())
+			logrus.Infof("success to Exec %q, return URL %q", r.GetContainerId(), res.GetUrl())
 		}
 	}()
 	return c.CriManager.Exec(ctx, r)
@@ -286,9 +284,9 @@ func (c *CriWrapper) Attach(ctx context.Context, r *runtime.AttachRequest) (res 
 	logrus.Infof("Attach for %q with tty %v and stdin %v", r.GetContainerId(), r.GetTty(), r.GetStdin())
 	defer func() {
 		if err != nil {
-			logrus.Errorf("Attach for %q failed, error: %v", r.GetContainerId(), err)
+			logrus.Errorf("failed to attach: %q, %v", r.GetContainerId(), err)
 		} else {
-			logrus.Infof("Attach for %q returns URL %q", r.GetContainerId(), res.GetUrl())
+			logrus.Infof("success to attach: %q, return URL %q", r.GetContainerId(), res.GetUrl())
 		}
 	}()
 	return c.CriManager.Attach(ctx, r)
@@ -299,9 +297,9 @@ func (c *CriWrapper) PortForward(ctx context.Context, r *runtime.PortForwardRequ
 	logrus.Infof("Portforward for %q port %v", r.GetPodSandboxId(), r.GetPort())
 	defer func() {
 		if err != nil {
-			logrus.Errorf("Portforward for %q failed, error: %v", r.GetPodSandboxId(), err)
+			logrus.Errorf("failed to portforward: %q, %v", r.GetPodSandboxId(), err)
 		} else {
-			logrus.Infof("Portforward for %q returns URL %q", r.GetPodSandboxId(), res.GetUrl())
+			logrus.Infof("success to portforward: %q, return URL %q", r.GetPodSandboxId(), res.GetUrl())
 		}
 	}()
 	return c.CriManager.PortForward(ctx, r)
@@ -312,9 +310,9 @@ func (c *CriWrapper) UpdateRuntimeConfig(ctx context.Context, r *runtime.UpdateR
 	logrus.Infof("UpdateRuntimeConfig with config %+v", r.GetRuntimeConfig())
 	defer func() {
 		if err != nil {
-			logrus.Errorf("UpdateRuntimeConfig failed, error: %v", err)
+			logrus.Errorf("failed to update RuntimeConfig: %v", err)
 		} else {
-			logrus.Infof("UpdateRuntimeConfig returns returns successfully")
+			logrus.Infof("success to update RuntimeConfig")
 		}
 	}()
 	return c.CriManager.UpdateRuntimeConfig(ctx, r)
@@ -325,9 +323,9 @@ func (c *CriWrapper) Status(ctx context.Context, r *runtime.StatusRequest) (res 
 	logrus.Infof("Status of cri manager")
 	defer func() {
 		if err != nil {
-			logrus.Errorf("Status failed, error: %v", err)
+			logrus.Errorf("failed to get status: %v", err)
 		} else {
-			logrus.Infof("Status returns status %+v", res.GetStatus())
+			logrus.Infof("success to get status: %+v", res.GetStatus())
 		}
 	}()
 	return c.CriManager.Status(ctx, r)
@@ -335,13 +333,13 @@ func (c *CriWrapper) Status(ctx context.Context, r *runtime.StatusRequest) (res 
 
 // ListImages lists existing images.
 func (c *CriWrapper) ListImages(ctx context.Context, r *runtime.ListImagesRequest) (res *runtime.ListImagesResponse, err error) {
-	logrus.Infof("ListImages with filter %+v", r.GetFilter())
+	logrus.Debugf("ListImages with filter %+v", r.GetFilter())
 	defer func() {
 		if err != nil {
-			logrus.Errorf("ListImages with filter %+v failed, error: %v", r.GetFilter(), err)
+			logrus.Errorf("failed to list images with filter %+v: %v", r.GetFilter(), err)
 		} else {
 			// NOTE: maybe log detailed image items with higher log level.
-			logrus.Infof("ListImages with filter %+v returns image list successfully", r.GetFilter())
+			logrus.Debugf("success to list images with filter: %+v", r.GetFilter())
 		}
 	}()
 	return c.CriManager.ListImages(ctx, r)
@@ -352,9 +350,9 @@ func (c *CriWrapper) ImageStatus(ctx context.Context, r *runtime.ImageStatusRequ
 	logrus.Infof("ImageStatus for %q", r.GetImage().GetImage())
 	defer func() {
 		if err != nil {
-			logrus.Errorf("ImageStatus for %q failed, error: %v", r.GetImage().GetImage(), err)
+			logrus.Errorf("failed to get ImageStatus: %q, %v", r.GetImage().GetImage(), err)
 		} else {
-			logrus.Infof("ImageStatus for %q returns image status %+v",
+			logrus.Infof("success to get ImageStatus: %q, %+v",
 				r.GetImage().GetImage(), res.GetImage())
 		}
 	}()
@@ -366,9 +364,9 @@ func (c *CriWrapper) PullImage(ctx context.Context, r *runtime.PullImageRequest)
 	logrus.Infof("PullImage %q with auth config %+v", r.GetImage().GetImage(), r.GetAuth())
 	defer func() {
 		if err != nil {
-			logrus.Errorf("PullImage %q failed, error: %v", r.GetImage().GetImage(), err)
+			logrus.Errorf("failed to pull image: %q, %v", r.GetImage().GetImage(), err)
 		} else {
-			logrus.Infof("PullImage %q returns image reference %q",
+			logrus.Infof("success to pull image %q, return image reference %q",
 				r.GetImage().GetImage(), res.GetImageRef())
 		}
 	}()
@@ -380,9 +378,9 @@ func (c *CriWrapper) RemoveImage(ctx context.Context, r *runtime.RemoveImageRequ
 	logrus.Infof("RemoveImage %q", r.GetImage().GetImage())
 	defer func() {
 		if err != nil {
-			logrus.Errorf("RemoveImage %q failed, error: %v", r.GetImage().GetImage(), err)
+			logrus.Errorf("failed to remove image: %q, %v", r.GetImage().GetImage(), err)
 		} else {
-			logrus.Infof("RemoveImage %q returns successfully", r.GetImage().GetImage())
+			logrus.Infof("success to remove image: %q", r.GetImage().GetImage())
 		}
 	}()
 	return c.CriManager.RemoveImage(ctx, r)
@@ -393,9 +391,9 @@ func (c *CriWrapper) ImageFsInfo(ctx context.Context, r *runtime.ImageFsInfoRequ
 	logrus.Infof("ImageFsInfo of cri manager")
 	defer func() {
 		if err != nil {
-			logrus.Errorf("ImageFsInfo failed, error: %v", err)
+			logrus.Errorf("faild to get ImageFsInfo: %v", err)
 		} else {
-			logrus.Infof("ImageFsInfo returns filesystem info %+v", res.GetImageFilesystems())
+			logrus.Infof("success to get ImageFsInfo, return filesystem info %+v", res.GetImageFilesystems())
 		}
 	}()
 	return c.CriManager.ImageFsInfo(ctx, r)
@@ -406,9 +404,9 @@ func (c *CriWrapper) RemoveVolume(ctx context.Context, r *runtime.RemoveVolumeRe
 	logrus.Infof("RemoveVolume %q", r.GetVolumeName())
 	defer func() {
 		if err != nil {
-			logrus.Errorf("RemoveVolume %q failed, error: %v", r.GetVolumeName(), err)
+			logrus.Errorf("failed to remove volume: %q, %v", r.GetVolumeName(), err)
 		} else {
-			logrus.Infof("RemoveVolume %q returns successfully", r.GetVolumeName())
+			logrus.Infof("success to remove volume %q", r.GetVolumeName())
 		}
 	}()
 	return c.CriManager.RemoveVolume(ctx, r)

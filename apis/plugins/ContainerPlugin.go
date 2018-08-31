@@ -25,7 +25,7 @@ type ContainerPlugin interface {
 	// could change the container update body passed-in by http request body
 	PreUpdate(io.ReadCloser) (io.ReadCloser, error)
 
-	// PostUpdate updates env /etc/profile.d/dockerenv.sh and /etc/instanceInfo,
+	// PostUpdate called after update method successful,
 	// the method accepts the rootfs path and envs of container
 	PostUpdate(string, []string) error
 }
