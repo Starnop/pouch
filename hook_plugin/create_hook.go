@@ -18,11 +18,15 @@ import (
 // 3. generate admin uid if env ali_admin_uid=0 exist
 // 4. set user to root if running in rich container mode
 // 5. convert label DiskQuota to DiskQuota in ContainerConfig parameter
-// 6. in rich container mode, add some capabilities by default
-// 7. in rich container mode, don't bind /etc/hosts /etc/hostname /etc/resolv.conf files into container
-// 8. in rich container mode, set ShmSize to half of the limit of memory
-// 9. set HOSTNAME env if HostName specified
-// 10. if VolumesFrom specifed and the container name has a prefix of slash, trim it
+// 6. in rich container mode, change ali_run_mode=common_vm to ali_run_mode=vm
+// 7. in rich container mode, convert 3 lables to env
+// 8. in rich container mode, add some capabilities by default
+// 9. in rich container mode, don't bind /etc/hosts /etc/hostname /etc/resolv.conf files into container
+// 10. in rich container mode, set ShmSize to half of the limit of memory
+// 11. generate quota id as needed
+// 12. set HOSTNAME env if HostName specified
+// 13. if VolumesFrom specifed and the container name has a prefix of slash, trim it
+// 14. add net-priority into spec-annotations
 func (c ContPlugin) PreCreate(createConfig *ContainerCreateConfig) error {
 	logrus.Infof("pre create method called")
 
