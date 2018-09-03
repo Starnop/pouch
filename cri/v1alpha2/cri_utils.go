@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"net"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"strconv"
@@ -23,6 +25,7 @@ import (
 	"github.com/containerd/typeurl"
 	"github.com/cri-o/ocicni/pkg/ocicni"
 	"github.com/go-openapi/strfmt"
+	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/net/context"
 )
@@ -685,6 +688,11 @@ func (c *CriManager) updateCreateConfig(createConfig *apitypes.ContainerCreateCo
 		createConfig.HostConfig.Runtime = sandboxMeta.Runtime
 	}
 
+	if err := updateNetworkEnv(createConfig, sandboxMeta); err != nil {
+		return errors.Wrapf(err, "failed to update sandbox: (%s) cni network information to container env", podSandboxID)
+	}
+	logrus.Debugf("update network env: (%v)", createConfig.Env)
+
 	if lc := config.GetLinux(); lc != nil {
 		resources := lc.GetResources()
 		if resources != nil {
@@ -1120,4 +1128,108 @@ func toCNIPortMappings(criPortMappings []*runtime.PortMapping) []ocicni.PortMapp
 		})
 	}
 	return portMappings
+}
+
+func updateNetworkEnv(createConfig *apitypes.ContainerCreateConfig, meta *SandboxMeta) error {
+	// TODO: only support ipv4
+	netNSPath := meta.NetNSPath
+
+	// get ip and mask
+	ip, mask, err := getContainerIPAndMask(netNSPath, "eth0", "-4")
+	if err != nil {
+		return errors.Wrapf(err, "failed to get container's ip and mask, NetNSPath: (%s)", netNSPath)
+	}
+	logrus.Debugf("update network env, ip: (%s), mask: (%s)", ip, mask)
+	createConfig.Env = setEnv(createConfig.Env, "RequestedIP", ip)
+	createConfig.Env = setEnv(createConfig.Env, "DefaultMask", mask)
+
+	// get gateway
+	gateway, err := getContainerGateway(netNSPath, "eth0")
+	if err != nil {
+		return errors.Wrapf(err, "failed to get container's gateway, NetNSPath: (%s)", netNSPath)
+	}
+	logrus.Debugf("update network env, gateway: (%s)", gateway)
+	createConfig.Env = setEnv(createConfig.Env, "DefaultRoute", gateway)
+
+	return nil
+}
+
+func setEnv(env []string, key, value string) []string {
+	index := -1
+	for i, pair := range env {
+		if strings.Split(pair, "=")[0] == key {
+			index = i
+			break
+		}
+	}
+
+	newEnv := fmt.Sprintf("%s=%s", key, value)
+	if index == -1 {
+		env = append(env, newEnv)
+	} else {
+		env[index] = newEnv
+	}
+
+	return env
+}
+
+func getContainerIPAndMask(netnsPath, interfaceName, addrType string) (string, string, error) {
+	nsenterPath, err := exec.LookPath("nsenter")
+	if err != nil {
+		return "", "", err
+	}
+
+	// Try to retrieve ip inside container network namespace
+	output, err := exec.Command(nsenterPath, fmt.Sprintf("--net=%s", netnsPath), "-F", "--",
+		"ip", "-o", addrType, "addr", "show", "dev", interfaceName, "scope", "global").CombinedOutput()
+	if err != nil {
+		return "", "", fmt.Errorf("Unexpected command output %s with error: %v", output, err)
+	}
+
+	lines := strings.Split(string(output), "\n")
+	if len(lines) < 1 {
+		return "", "", fmt.Errorf("Unexpected command output %s", output)
+	}
+	fields := strings.Fields(lines[0])
+	if len(fields) < 4 {
+		return "", "", fmt.Errorf("Unexpected address output %s ", lines[0])
+	}
+	ip, ipNet, err := net.ParseCIDR(fields[3])
+	if err != nil {
+		return "", "", fmt.Errorf("CNI failed to parse ip from output %s due to %v", output, err)
+	}
+
+	mask, _ := ipNet.Mask.Size()
+
+	return ip.String(), strconv.Itoa(mask), nil
+}
+
+func getContainerGateway(netnsPath, interfaceName string) (string, error) {
+	nsenterPath, err := exec.LookPath("nsenter")
+	if err != nil {
+		return "", err
+	}
+
+	// Try to retrieve ip inside container network namespace
+	output, err := exec.Command(nsenterPath, fmt.Sprintf("--net=%s", netnsPath), "-F", "--",
+		"ip", "route", "show", "dev", interfaceName, "scope", "global").CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("Unexpected command output %s with error: %v", output, err)
+	}
+
+	lines := strings.Split(string(output), "\n")
+	if len(lines) < 1 {
+		return "", fmt.Errorf("Unexpected command output %s", output)
+	}
+	fields := strings.Fields(lines[0])
+	if len(fields) < 3 {
+		return "", fmt.Errorf("Unexpected address output %s ", lines[0])
+	}
+
+	ip := net.ParseIP(fields[2])
+	if ip == nil {
+		return "", fmt.Errorf("CNI failed to parse route from output %s", output)
+	}
+
+	return ip.String(), nil
 }
