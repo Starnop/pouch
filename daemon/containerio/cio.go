@@ -63,12 +63,9 @@ func NewFifos(id string, stdin bool) (*containerdio.FIFOSet, error) {
 		Err: filepath.Join(dir, id+"-stderr"),
 	}
 
-	/*
-		NOTE(tanghuamin): for compatible docker 1.12
-		if !stdin {
-			fifos.In = ""
-		}
-	*/
+	if !stdin {
+		fifos.In = ""
+	}
 
 	return fifos, nil
 }
