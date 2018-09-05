@@ -237,6 +237,13 @@ func (mgr *ContainerManager) Restore(ctx context.Context) error {
 			return nil
 		}
 
+		// NOTE(huamin): we have opened all stdio opened before,
+		// we can not remove it, or online will get panic
+		// set OpenStdin = true not effect container, since whether
+		// copy io from stdin depend on stdin fifo is exist, not depend
+		// on OpenStdin flag.
+		container.Config.OpenStdin = true
+
 		// recover the running or paused container.
 		io, err := mgr.openContainerIO(container)
 		if err != nil {

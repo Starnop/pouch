@@ -52,16 +52,12 @@ func NewIO(opt *Option) *IO {
 	i := &IO{
 		Stdout:      create(opt, stdout, backends),
 		Stderr:      create(opt, stderr, backends),
-		Stdin:       create(opt, stdin, backends),
 		MuxDisabled: opt.muxDisabled,
 	}
 
-	/*
-		NOTE(tanghuamin): for compatible docker 1.12
-		if opt.stdin {
-			i.Stdin = create(opt, stdin, backends)
-		}
-	*/
+	if opt.stdin {
+		i.Stdin = create(opt, stdin, backends)
+	}
 
 	return i
 }
