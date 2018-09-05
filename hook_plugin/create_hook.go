@@ -33,16 +33,15 @@ func (c ContPlugin) PreCreate(createConfig *ContainerCreateConfig) error {
 	if createConfig.HostConfig == nil {
 		createConfig.HostConfig = &HostConfig{}
 	}
-	requestedIP := ""
+	env := createConfig.Env
+	requestedIP := getEnv(env, "RequestedIP")
 	if createConfig.HostConfig.NetworkMode == "default" || createConfig.HostConfig.NetworkMode == "" {
 		createConfig.HostConfig.NetworkMode = "bridge"
 	}
 	networkMode := createConfig.HostConfig.NetworkMode
-	env := createConfig.Env
 
 	//setup network just in case
 	if !strings.HasPrefix(networkMode, "container:") && networkMode != "host" && networkMode != "none" {
-		requestedIP = getEnv(env, "RequestedIP")
 		defaultRoute := getEnv(env, "DefaultRoute")
 		mask := getEnv(env, "DefaultMask")
 		nic := getEnv(env, "DefaultNic")
