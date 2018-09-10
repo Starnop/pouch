@@ -122,13 +122,14 @@ func (c *Client) execContainer(ctx context.Context, process *Process) error {
 			exitTime: status.ExitTime(),
 		}
 
-		// run hook if not got fail here
-		if err := <-fail; err == nil {
-			for _, hook := range c.hooks {
-				if err := hook(process.ExecID, msg); err != nil {
-					logrus.Errorf("failed to execute the exec exit hooks: %v", err)
-					break
-				}
+		if err := <-fail; err != nil {
+			msg.err = err
+		}
+
+		for _, hook := range c.hooks {
+			if err := hook(process.ExecID, msg); err != nil {
+				logrus.Errorf("failed to execute the exec exit hooks: %v", err)
+				break
 			}
 		}
 

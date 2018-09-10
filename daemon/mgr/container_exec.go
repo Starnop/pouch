@@ -78,6 +78,7 @@ func (mgr *ContainerManager) StartExec(ctx context.Context, execid string, attac
 			eio.Close()
 			mgr.IOs.Remove(execid)
 		}
+		mgr.ExecProcesses.Put(execid, execConfig)
 	}()
 
 	if attach != nil {
