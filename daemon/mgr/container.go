@@ -485,6 +485,11 @@ func (mgr *ContainerManager) Start(ctx context.Context, id string, options *type
 		return err
 	}
 
+	// check if container's status is running
+	if c.IsRunning() {
+		return errors.Wrapf(errtypes.ErrNotModified, "container already started")
+	}
+
 	if !c.Config.DisableNetworkFiles {
 		for _, one := range c.Config.Env {
 			arr := strings.SplitN(one, "=", 2)
