@@ -1134,6 +1134,13 @@ func updateNetworkEnv(createConfig *apitypes.ContainerCreateConfig, meta *Sandbo
 	// TODO: only support ipv4
 	netNSPath := meta.NetNSPath
 
+	// skip sandbox pod is host mode.
+	nsOpts := meta.Config.GetLinux().GetSecurityContext().GetNamespaceOptions()
+	hostNet := nsOpts.GetNetwork() == runtime.NamespaceMode_NODE
+	if hostNet {
+		return nil
+	}
+
 	// get ip and mask
 	ip, mask, err := getContainerIPAndMask(netNSPath, "eth0", "-4")
 	if err != nil {
