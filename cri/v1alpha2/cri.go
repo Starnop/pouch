@@ -17,6 +17,7 @@ import (
 	anno "github.com/alibaba/pouch/cri/annotations"
 	runtime "github.com/alibaba/pouch/cri/apis/v1alpha2"
 	cni "github.com/alibaba/pouch/cri/ocicni"
+	"github.com/alibaba/pouch/cri/stream"
 	"github.com/alibaba/pouch/daemon/config"
 	"github.com/alibaba/pouch/daemon/mgr"
 	"github.com/alibaba/pouch/pkg/errtypes"
@@ -53,11 +54,6 @@ const (
 
 	// nameDelimiter is used to construct pouch container names.
 	nameDelimiter = "_"
-
-	// Address and port of stream server.
-	// TODO: specify them in the parameters of pouchd.
-	streamServerAddress = ""
-	streamServerPort    = "10011"
 
 	namespaceModeHost = "host"
 	namespaceModeNone = "none"
@@ -96,6 +92,9 @@ type CriMgr interface {
 
 	// StreamServerStart starts the stream server of CRI.
 	StreamServerStart() error
+
+	// StreamStart returns the router of Stream Server.
+	StreamRouter() stream.Router
 }
 
 // CriManager is an implementation of interface CriMgr.
@@ -126,7 +125,19 @@ type CriManager struct {
 
 // NewCriManager creates a brand new cri manager.
 func NewCriManager(config *config.Config, ctrMgr mgr.ContainerMgr, imgMgr mgr.ImageMgr, volumeMgr mgr.VolumeMgr) (CriMgr, error) {
-	streamServer, err := newStreamServer(ctrMgr, streamServerAddress, streamServerPort)
+	var streamServerAddress string
+	streamServerPort := config.CriConfig.StreamServerPort
+	// If stream server reuse the pouchd's port, extract the ip and port from pouchd's listening addresses.
+	if config.CriConfig.StreamServerReusePort {
+		streamServerAddress, streamServerPort = extractIPAndPortFromAddresses(config.Listen)
+		if streamServerPort == "" {
+			return nil, fmt.Errorf("failed to extract stream server's port from pouchd's listening addresses")
+		}
+	}
+
+	// If the reused pouchd's port is https, the url that stream server return should be with https scheme.
+	reuseHTTPSPort := config.CriConfig.StreamServerReusePort && config.TLS.Key != "" && config.TLS.Cert != ""
+	streamServer, err := newStreamServer(ctrMgr, streamServerAddress, streamServerPort, reuseHTTPSPort)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create stream server for cri manager: %v", err)
 	}
@@ -174,6 +185,11 @@ func NewCriManager(config *config.Config, ctrMgr mgr.ContainerMgr, imgMgr mgr.Im
 // StreamServerStart starts the stream server of CRI.
 func (c *CriManager) StreamServerStart() error {
 	return c.StreamServer.Start()
+}
+
+// StreamRouter returns the router of Stream Server.
+func (c *CriManager) StreamRouter() stream.Router {
+	return c.StreamServer
 }
 
 // TODO: Move the underlying functions to their respective files in the future.
@@ -251,29 +267,28 @@ func (c *CriManager) RunPodSandbox(ctx context.Context, r *runtime.RunPodSandbox
 
 	// Step 4: Setup networking for the sandbox.
 	var netnsPath string
-	securityContext := config.GetLinux().GetSecurityContext()
-	hostNet := securityContext.GetNamespaceOptions().GetNetwork() == runtime.NamespaceMode_NODE
+	networkNamespaceMode := config.GetLinux().GetSecurityContext().GetNamespaceOptions().GetNetwork()
 	// If it is in host network, no need to configure the network of sandbox.
-	if !hostNet {
-		container, err := c.ContainerMgr.Get(ctx, id)
+	if networkNamespaceMode != runtime.NamespaceMode_NODE {
+		netnsPath, err = c.setupPodNetwork(ctx, id, config)
 		if err != nil {
 			return nil, err
 		}
-		netnsPath = containerNetns(container)
-		if netnsPath == "" {
-			return nil, fmt.Errorf("failed to find network namespace path for sandbox %q", id)
-		}
-
-		err = c.CniMgr.SetUpPodNetwork(&ocicni.PodNetwork{
-			Name:         config.GetMetadata().GetName(),
-			Namespace:    config.GetMetadata().GetNamespace(),
-			ID:           id,
-			NetNS:        netnsPath,
-			PortMappings: toCNIPortMappings(config.GetPortMappings()),
-		})
-		if err != nil {
-			return nil, err
-		}
+		defer func() {
+			// Teardown network if an error is returned.
+			if retErr != nil {
+				teardownNetErr := c.CniMgr.TearDownPodNetwork(&ocicni.PodNetwork{
+					Name:         config.GetMetadata().GetName(),
+					Namespace:    config.GetMetadata().GetNamespace(),
+					ID:           id,
+					NetNS:        netnsPath,
+					PortMappings: toCNIPortMappings(config.GetPortMappings()),
+				})
+				if teardownNetErr != nil {
+					logrus.Errorf("failed to destroy network for sandbox %q: %v", id, teardownNetErr)
+				}
+			}
+		}()
 	}
 
 	sandboxMeta := &SandboxMeta{
@@ -287,6 +302,71 @@ func (c *CriManager) RunPodSandbox(ctx context.Context, r *runtime.RunPodSandbox
 	}
 
 	return &runtime.RunPodSandboxResponse{PodSandboxId: id}, nil
+}
+
+// StartPodSandbox restart a sandbox pod which was stopped by accident
+// and we should reconfigure it with network plugin which will make sure it reacquire its original network configuration,
+// like IP address.
+func (c *CriManager) StartPodSandbox(ctx context.Context, r *runtime.StartPodSandboxRequest) (*runtime.StartPodSandboxResponse, error) {
+	podSandboxID := r.GetPodSandboxId()
+
+	// start PodSandbox.
+	startErr := c.ContainerMgr.Start(ctx, podSandboxID, &apitypes.ContainerStartOptions{})
+	if startErr != nil {
+		return nil, fmt.Errorf("failed to start podSandbox %q: %v", podSandboxID, startErr)
+	}
+
+	var err error
+	defer func() {
+		if err != nil {
+			stopErr := c.ContainerMgr.Stop(ctx, podSandboxID, defaultStopTimeout)
+			if stopErr != nil {
+				logrus.Errorf("failed to stop sandbox %q: %v", podSandboxID, stopErr)
+			}
+		}
+	}()
+
+	// get the sandbox's meta data.
+	res, err := c.SandboxStore.Get(podSandboxID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get metadata of %q from SandboxStore: %v", podSandboxID, err)
+	}
+	sandboxMeta := res.(*SandboxMeta)
+
+	// setup networking for the sandbox.
+	var netnsPath string
+	networkNamespaceMode := sandboxMeta.Config.GetLinux().GetSecurityContext().GetNamespaceOptions().GetNetwork()
+	// If it is in host network, no need to configure the network of sandbox.
+	if networkNamespaceMode != runtime.NamespaceMode_NODE {
+		netnsPath, err = c.setupPodNetwork(ctx, podSandboxID, sandboxMeta.Config)
+		if err != nil {
+			return nil, err
+		}
+		defer func() {
+			// Teardown network if an error is returned.
+			if err != nil {
+				teardownNetErr := c.CniMgr.TearDownPodNetwork(&ocicni.PodNetwork{
+					Name:         sandboxMeta.Config.GetMetadata().GetName(),
+					Namespace:    sandboxMeta.Config.GetMetadata().GetNamespace(),
+					ID:           podSandboxID,
+					NetNS:        netnsPath,
+					PortMappings: toCNIPortMappings(sandboxMeta.Config.GetPortMappings()),
+				})
+				if teardownNetErr != nil {
+					logrus.Errorf("failed to destroy network for sandbox %q: %v", podSandboxID, teardownNetErr)
+				}
+			}
+		}()
+	}
+
+	// update sandboxMeta
+	sandboxMeta.NetNSPath = netnsPath
+	err = c.SandboxStore.Put(sandboxMeta)
+	if err != nil {
+		return nil, err
+	}
+
+	return &runtime.StartPodSandboxResponse{}, nil
 }
 
 // StopPodSandbox stops the sandbox. If there are any running containers in the
@@ -560,7 +640,15 @@ func (c *CriManager) CreateContainer(ctx context.Context, r *runtime.CreateConta
 	sandboxRootDir := path.Join(c.SandboxBaseDir, podSandboxID)
 	createConfig.HostConfig.Binds = append(createConfig.HostConfig.Binds, generateContainerMounts(sandboxRootDir)...)
 
-	// TODO: devices and security option configurations.
+	var devices []*apitypes.DeviceMapping
+	for _, device := range config.Devices {
+		devices = append(devices, &apitypes.DeviceMapping{
+			PathOnHost:        device.HostPath,
+			PathInContainer:   device.ContainerPath,
+			CgroupPermissions: device.Permissions,
+		})
+	}
+	createConfig.HostConfig.Resources.Devices = devices
 
 	containerName := makeContainerName(sandboxConfig, config)
 

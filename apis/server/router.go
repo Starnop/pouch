@@ -81,7 +81,6 @@ func initRoute(s *Server) http.Handler {
 	s.addRoute(r, http.MethodDelete, "/volumes/{name:.*}", s.removeVolume)
 
 	// network
-
 	s.addRoute(r, http.MethodGet, "/networks", s.listNetwork)
 	s.addRoute(r, http.MethodPost, "/networks/create", s.createNetwork)
 	s.addRoute(r, http.MethodGet, "/networks/{id:.*}", s.getNetwork)
@@ -89,13 +88,30 @@ func initRoute(s *Server) http.Handler {
 	s.addRoute(r, http.MethodPost, "/networks/{id:.*}/connect", s.connectToNetwork)
 	s.addRoute(r, http.MethodPost, "/networks/{id:.*}/disconnect", s.disconnectNetwork)
 
+	// host exec handlers
+	s.addRoute(r, http.MethodGet, "/host/exec/result", s.HostExecResultHandler)
+	s.addRoute(r, http.MethodPost, "/host/exec", s.HostExecHandler)
+
 	// metrics
 	r.Path(versionMatcher + "/metrics").Methods(http.MethodGet).Handler(prometheus.Handler())
 	r.Path("/metrics").Methods(http.MethodGet).Handler(prometheus.Handler())
 
-	// host exec handlers
-	s.addRoute(r, http.MethodGet, "/host/exec/result", s.HostExecResultHandler)
-	s.addRoute(r, http.MethodPost, "/host/exec", s.HostExecHandler)
+	// CRI stream server related handlers
+	if s.StreamRouter != nil {
+		endpoints := []struct {
+			path    string
+			handler http.HandlerFunc
+		}{
+			{"/exec/{token}", s.StreamRouter.ServeExec},
+			{"/attach/{token}", s.StreamRouter.ServeAttach},
+			{"/portforward/{token}", s.StreamRouter.ServePortForward},
+		}
+		for _, e := range endpoints {
+			for _, method := range []string{http.MethodGet, http.MethodPost} {
+				r.Path(e.path).Methods(method).Handler(e.handler)
+			}
+		}
+	}
 
 	if s.Config.Debug || s.Config.EnableProfiler {
 		profilerSetup(r)
