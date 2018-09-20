@@ -203,5 +203,17 @@ func (c ContPlugin) PreCreate(createConfig *ContainerCreateConfig) error {
 		}
 		createConfig.SpecAnnotation["net-priority"] = strconv.FormatInt(createConfig.NetPriority, 10)
 	}
+
+	// add annotations with prefix 'annotation.' into spec-annotations,
+	// for edas serverless.
+	for k, v := range createConfig.Labels {
+		if createConfig.SpecAnnotation == nil {
+			createConfig.SpecAnnotation = make(map[string]string)
+		}
+		if strings.HasPrefix(k, "annotation.") {
+			createConfig.SpecAnnotation[strings.TrimPrefix(k, "annotation.")] = v
+		}
+	}
+
 	return nil
 }
