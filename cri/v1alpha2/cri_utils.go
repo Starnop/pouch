@@ -1227,14 +1227,17 @@ func getContainerIPAndMask(netnsPath, interfaceName, addrType string) (string, s
 	if len(fields) < 4 {
 		return "", "", fmt.Errorf("Unexpected address output %s ", lines[0])
 	}
+
+	// just support ipv4
 	ip, ipNet, err := net.ParseCIDR(fields[3])
 	if err != nil {
 		return "", "", fmt.Errorf("CNI failed to parse ip from output %s due to %v", output, err)
 	}
 
-	mask, _ := ipNet.Mask.Size()
+	maskLen, _ := ipNet.Mask.Size()
+	mask := GetIPV4NetworkMaskBySize(maskLen)
 
-	return ip.String(), strconv.Itoa(mask), nil
+	return ip.String(), mask, nil
 }
 
 func getContainerGateway(netnsPath, interfaceName string) (string, error) {
@@ -1265,4 +1268,15 @@ func getContainerGateway(netnsPath, interfaceName string) (string, error) {
 	}
 
 	return ip.String(), nil
+}
+
+func GetIPV4NetworkMaskBySize(size int) string {
+	// Java makes the sign bit sticky on a shift
+	shft := 0xffffffff << uint(32-size)
+
+	oct1 := ((shft & 0xff000000) >> 24) & 0xff
+	oct2 := (shft & 0x00ff0000) >> 16
+	oct3 := (shft & 0x0000ff00) >> 8
+	oct4 := shft & 0x000000ff
+	return strconv.Itoa(oct1) + "." + strconv.Itoa(oct2) + "." + strconv.Itoa(oct3) + "." + strconv.Itoa(oct4)
 }
