@@ -3,6 +3,7 @@ package v1alpha2
 import (
 	runtime "github.com/alibaba/pouch/cri/apis/v1alpha2"
 
+	"encoding/json"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/net/context"
 )
@@ -45,7 +46,8 @@ func (c *CriWrapper) Version(ctx context.Context, r *runtime.VersionRequest) (re
 // the sandbox is in ready state.
 func (c *CriWrapper) RunPodSandbox(ctx context.Context, r *runtime.RunPodSandboxRequest) (res *runtime.RunPodSandboxResponse, err error) {
 	// NOTE: maybe we should log the verbose configuration in higher log level.
-	logrus.Infof("RunPodSandbox with config %+v", r.GetConfig())
+	config, err := json.Marshal(r.GetConfig())
+	logrus.Infof("RunPodSandbox with config %v", string(config))
 	defer func() {
 		if err != nil {
 			logrus.Errorf("failed to run PodSandbox: %+v, %v", r.GetConfig().GetMetadata(), err)
@@ -259,7 +261,7 @@ func (c *CriWrapper) ExecSync(ctx context.Context, r *runtime.ExecSyncRequest) (
 		if err != nil {
 			logrus.Errorf("failed to ExecSync: %q, %v", r.GetContainerId(), err)
 		} else {
-			logrus.Infof("success to ExecSync %q, return with exit code %d", r.GetContainerId(), res.GetExitCode())
+			logrus.Infof("success to ExecSync %q, return with resp %+v", r.GetContainerId(), res)
 		}
 	}()
 	return c.CriManager.ExecSync(ctx, r)
