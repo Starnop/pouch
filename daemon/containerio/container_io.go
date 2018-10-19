@@ -314,6 +314,7 @@ func (cb *containerBackend) drainRingBuffer() error {
 	} {
 		for _, value := range item.data {
 			if b, ok := value.([]byte); ok {
+				logrus.Warnf("drain byte %s: %d", b, len(b))
 				if _, err := item.w.Write(b); err != nil {
 					return err
 				}
@@ -333,6 +334,9 @@ func subscribe(name, id string, ring *ringbuffer.RingBuffer, out io.Writer) {
 		if err != nil {
 			break
 		}
+
+		byteTemp := value.([]byte)
+		logrus.Warnf("pop byte %s: %d", byteTemp, len(byteTemp))
 
 		if b, ok := value.([]byte); ok {
 			if _, err := out.Write(b); err != nil {
