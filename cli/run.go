@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/alibaba/pouch/apis/types"
+	"github.com/alibaba/pouch/pkg/ioutils"
 
 	"github.com/spf13/cobra"
 )
@@ -71,6 +72,7 @@ func (rc *RunCommand) runRun(args []string) error {
 	}
 	containerName := rc.name
 	config.ContainerConfig.OpenStdin = rc.stdin
+	config.ContainerConfig.StdinOnce = rc.stdin // close stdin after attach connection closed
 
 	ctx := context.Background()
 	apiClient := rc.cli.Client()
@@ -135,6 +137,10 @@ func (rc *RunCommand) runRun(args []string) error {
 		}()
 		go func() {
 			io.Copy(conn, os.Stdin)
+			// close write if receive CTRL-D
+			if cw, ok := conn.(ioutils.CloseWriter); ok {
+				cw.CloseWrite()
+			}
 		}()
 	}
 
