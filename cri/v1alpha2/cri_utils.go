@@ -516,7 +516,7 @@ func parseContainerName(name string) (*runtime.ContainerMetadata, error) {
 
 // makeupLogPath makes up the log path of container from log directory and its metadata.
 func makeupLogPath(logDirectory string, metadata *runtime.ContainerMetadata) string {
-	return filepath.Join(logDirectory, metadata.Name, fmt.Sprintf("%d.log", metadata.Attempt))
+	return filepath.Join(logDirectory, fmt.Sprintf("%s.log", metadata.Name))
 }
 
 // modifyContainerNamespaceOptions apply namespace options for container.

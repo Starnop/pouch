@@ -266,7 +266,7 @@ func (c *CriWrapper) ReopenContainerLog(ctx context.Context, r *runtime.ReopenCo
 	logrus.Infof("ReopenContainerLog for %q", r.GetContainerId())
 	defer func() {
 		if err != nil {
-			logrus.Errorf("failed to ReopenContainerLog: %q", r.GetContainerId())
+			logrus.Errorf("failed to ReopenContainerLog: %q, %v", r.GetContainerId(), err)
 		} else {
 			logrus.Infof("success to ReopenContainerLog: %q", r.GetContainerId())
 		}

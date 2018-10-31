@@ -1127,7 +1127,34 @@ func (c *CriManager) UpdateContainerResources(ctx context.Context, r *runtime.Up
 // to either create a new log file and return nil, or return an error.
 // Once it returns error, new container log file MUST NOT be created.
 func (c *CriManager) ReopenContainerLog(ctx context.Context, r *runtime.ReopenContainerLogRequest) (*runtime.ReopenContainerLogResponse, error) {
-	return nil, fmt.Errorf("ReopenContainerLog Not Implemented Yet")
+	containerID := r.GetContainerId()
+	container, err := c.ContainerMgr.Get(ctx, containerID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get container %q with error: %v", containerID, err)
+	}
+
+	metadata, err := parseContainerName(container.Name)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get container status of %q: %v", containerID, err)
+	}
+
+	podSandboxID := container.Config.Labels[sandboxIDLabelKey]
+	res, err := c.SandboxStore.Get(podSandboxID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get metadata of %q from SandboxStore: %v", podSandboxID, err)
+	}
+	sandboxMeta := res.(*SandboxMeta)
+
+	logDirectory := sandboxMeta.Config.GetLogDirectory()
+	logPath := makeupLogPath(logDirectory, metadata)
+
+	// Get container log.
+	if logPath != "" {
+		if err := c.ContainerMgr.AttachCRILog(ctx, containerID, logPath); err != nil {
+			return nil, err
+		}
+	}
+	return &runtime.ReopenContainerLogResponse{}, nil
 }
 
 // ExecSync executes a command in the container, and returns the stdout output.
