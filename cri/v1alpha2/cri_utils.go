@@ -366,7 +366,8 @@ func (c *CriManager) filterInvalidSandboxes(ctx context.Context, sandboxes []*mg
 	if err != nil {
 		return nil, err
 	}
-
+	fmt.Printf("get validSandboxes : %v \n",validSandboxes)
+	fmt.Printf("get sandboxes : %v \n",sandboxes)
 	var result []*mgr.Container
 	for _, sandbox := range sandboxes {
 		exist := false
@@ -395,6 +396,8 @@ func (c *CriManager) filterInvalidSandboxes(ctx context.Context, sandboxes []*mg
 			c.ContainerMgr.Remove(ctx, sandbox.ID, &apitypes.ContainerRemoveOptions{Volumes: true, Force: true})
 		}
 	}
+	fmt.Printf("get result : %v \n",result)
+
 	return result, nil
 }
 
